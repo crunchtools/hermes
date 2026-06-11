@@ -24,8 +24,8 @@ WORKDIR /build
 # hermes-agent is published on PyPI; install into an isolated venv we can
 # copy into the runtime image. Pinned for reproducible builds.
 ARG HERMES_VERSION=0.16.0
-RUN python3.13 -m venv /build/venv && \
-    /build/venv/bin/pip install --no-cache-dir "hermes-agent==${HERMES_VERSION}"
+RUN python3.13 -m venv /app/venv && \
+    /app/venv/bin/pip install --no-cache-dir "hermes-agent==${HERMES_VERSION}"
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
@@ -50,7 +50,7 @@ LABEL org.opencontainers.image.vendor="crunchtools"
 WORKDIR /app
 
 # Bring in the installed hermes-agent venv and signal-cli native binary
-COPY --from=builder /build/venv /app/venv
+COPY --from=builder /app/venv /app/venv
 COPY --from=builder /build/signal-cli /app/signal-cli
 
 ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
