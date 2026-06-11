@@ -1,0 +1,70 @@
+# Hermes Agent — crunchtools deployment
+# Autonomous AI agent (Nous Research Hermes) running under the
+# crunchtools Autonomous Agent constitution profile.
+#
+# Build:
+#   podman build -t quay.io/crunchtools/hermes .
+#
+# Run (mirrors openclaw deployment shape):
+#   podman run -d --name hermes.crunchtools.com \
+#     --rm --read-only --tmpfs /tmp:rw,nosuid \
+#     --network crunchtools \
+#     -p 127.0.0.1:18790:18790 \
+#     -v /srv/hermes.crunchtools.com/data/hermes:/app/.hermes:Z \
+#     -v /srv/hermes.crunchtools.com/data/signal:/app/.local/share/signal-cli:Z \
+#     -v /srv/hermes.crunchtools.com/logs:/app/logs:Z \
+#     --env-file /srv/hermes.crunchtools.com/config/env \
+#     quay.io/crunchtools/hermes
+
+# Stage 1: Install hermes-agent and signal-cli into staging dirs
+FROM quay.io/hummingbird/python:latest-builder AS builder
+
+WORKDIR /build
+
+# hermes-agent is published on PyPI; install into an isolated venv we can
+# copy into the runtime image. Pinned for reproducible builds.
+ARG HERMES_VERSION=0.16.0
+RUN python -m venv /build/venv && \
+    /build/venv/bin/pip install --no-cache-dir "hermes-agent==${HERMES_VERSION}"
+
+# signal-cli native binary (GraalVM, no JVM at runtime). Matches the
+# pattern crunchtools/openclaw uses for the same purpose.
+ARG SIGNAL_CLI_VERSION=0.14.4.1
+RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-native.tar.gz" \
+        -o /tmp/signal-cli.tar.gz && \
+    mkdir -p /build/signal-cli && \
+    tar xf /tmp/signal-cli.tar.gz -C /build/signal-cli --strip-components=1 && \
+    chmod +x /build/signal-cli/bin/signal-cli && \
+    rm /tmp/signal-cli.tar.gz
+
+# Stage 2: Minimal runtime — no build tools, no package manager
+FROM quay.io/hummingbird/python:latest
+
+LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
+LABEL description="Hermes Agent autonomous AI agent — crunchtools deployment under the Autonomous Agent constitution profile (Signal messaging, weekly orchestration of crunchtools GHA cascade, ops watchers)."
+LABEL org.opencontainers.image.source="https://github.com/crunchtools/hermes"
+LABEL org.opencontainers.image.title="hermes"
+LABEL org.opencontainers.image.description="Hermes Agent containerized for crunchtools per profiles/autonomous-agent.md"
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
+LABEL org.opencontainers.image.vendor="crunchtools"
+
+WORKDIR /app
+
+# Bring in the installed hermes-agent venv and signal-cli native binary
+COPY --from=builder /build/venv /app/venv
+COPY --from=builder /build/signal-cli /app/signal-cli
+
+ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
+    HOME=/app \
+    HERMES_CONFIG_DIR=/app/.hermes \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 18790
+
+# Health probe via hermes's own self-diagnostic
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD hermes doctor --json >/dev/null 2>&1 || exit 1
+
+# Start the messaging gateway in unattended mode. Signal channel + bot
+# pairing is configured via files under /app/.hermes (bind-mounted).
+ENTRYPOINT ["hermes", "gateway", "start"]
