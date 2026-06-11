@@ -32,8 +32,8 @@ RUN python3.13 -m venv /build/venv && \
 ARG SIGNAL_CLI_VERSION=0.14.4.1
 RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-native.tar.gz" \
         -o /tmp/signal-cli.tar.gz && \
-    python3.13 -c "import tarfile; tarfile.open('/tmp/signal-cli.tar.gz').extractall('/build', filter='data')" && \
-    python3.13 -c "import shutil; shutil.move('/build/signal-cli-${SIGNAL_CLI_VERSION}-Linux-native', '/build/signal-cli')" && \
+    mkdir -p /build/signal-cli/bin && \
+    python3.13 -c "import tarfile; tarfile.open('/tmp/signal-cli.tar.gz').extractall('/build/signal-cli/bin', filter='data')" && \
     python3.13 -c "import os; os.chmod('/build/signal-cli/bin/signal-cli', 0o755); os.remove('/tmp/signal-cli.tar.gz')"
 
 # Stage 2: Minimal runtime — no build tools, no package manager
