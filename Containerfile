@@ -17,7 +17,7 @@
 #     quay.io/crunchtools/hermes
 
 # Stage 1: Install hermes-agent and signal-cli into staging dirs
-FROM quay.io/hummingbird/python:latest-builder AS builder
+FROM quay.io/hummingbird/python:3.13-builder AS builder
 
 WORKDIR /build
 
@@ -38,7 +38,7 @@ RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CL
     rm /tmp/signal-cli.tar.gz
 
 # Stage 2: Minimal runtime — no build tools, no package manager
-FROM quay.io/hummingbird/python:latest
+FROM quay.io/hummingbird/python:3.13
 
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
 LABEL description="Hermes Agent autonomous AI agent — crunchtools deployment under the Autonomous Agent constitution profile (Signal messaging, weekly orchestration of crunchtools GHA cascade, ops watchers)."
