@@ -24,7 +24,7 @@ WORKDIR /build
 # hermes-agent is published on PyPI; install into an isolated venv we can
 # copy into the runtime image. Pinned for reproducible builds.
 ARG HERMES_VERSION=0.16.0
-RUN python -m venv /build/venv && \
+RUN python3.13 -m venv /build/venv && \
     /build/venv/bin/pip install --no-cache-dir "hermes-agent==${HERMES_VERSION}"
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
