@@ -19,6 +19,11 @@
 # Stage 1: Install hermes-agent and signal-cli into staging dirs
 FROM quay.io/hummingbird/python:3.13-builder AS builder
 
+# Hummingbird's distroless builder defaults to a non-root user that can't
+# write to /app — switch to root for the build stage (it's discarded anyway).
+# Same pattern as crunchtools/mcp-airlock.
+USER 0
+
 WORKDIR /build
 
 # hermes-agent is published on PyPI; install into an isolated venv we can
