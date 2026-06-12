@@ -78,4 +78,4 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
 
 # Start the messaging gateway in unattended mode. Signal channel + bot
 # pairing is configured via files under /app/.hermes (bind-mounted).
-ENTRYPOINT ["hermes", "gateway", "start"]
+ENTRYPOINT ["hermes", "gateway", "run"]
