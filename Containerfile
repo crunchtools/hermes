@@ -34,7 +34,7 @@ RUN python3.13 -m venv /app/venv && \
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
-ARG SIGNAL_CLI_VERSION=0.14.0
+ARG SIGNAL_CLI_VERSION=0.14.5
 RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-native.tar.gz" \
         -o /tmp/signal-cli.tar.gz && \
     mkdir -p /build/signal-cli/bin && \
