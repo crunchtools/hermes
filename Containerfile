@@ -58,6 +58,13 @@ WORKDIR /app
 COPY --from=builder /app/venv /app/venv
 COPY --from=builder /build/signal-cli /app/signal-cli
 
+# signal-cli's GraalVM native binary extracts a JNI bridge to /tmp at startup
+# (libsignal_jni_amd64.so) and dlopen()s it — that .so depends on libstdc++.so.6
+# which the distroless Hummingbird python:3.13 runtime doesn't carry (pure Python
+# doesn't need C++ runtime). Copy libstdc++ from the builder stage. Same pattern
+# as crunchtools/mcp-airlock.
+COPY --from=builder /usr/lib64/libstdc++.so.6* /usr/lib64/
+
 ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
     HOME=/app \
     HERMES_CONFIG_DIR=/app/.hermes \
