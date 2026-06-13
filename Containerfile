@@ -16,33 +16,47 @@
 #     --env-file /srv/hermes.crunchtools.com/config/env \
 #     quay.io/crunchtools/hermes
 
-# Stage 1: Install hermes-agent and signal-cli into staging dirs
-FROM quay.io/hummingbird/python:3.13-builder AS builder
+# Stage 1: Install hermes-agent + signal-cli on UBI10-minimal.
+#
+# Why UBI10-minimal instead of the distroless Hummingbird python:3.13 we use for
+# pure-Python MCP servers: Hermes is an *autonomous agent* that legitimately needs
+# /bin/sh and standard userspace tools to orchestrate its work (subprocess.run,
+# os.system, signal-cli wrapper). The distroless runtime was rejecting Hermes's
+# internal shell-outs with "FileNotFoundError: '/bin/sh'". UBI10-minimal includes a
+# real shell while staying ~120MB before our Python adds.
+FROM registry.access.redhat.com/ubi10/ubi-minimal AS builder
 
-# Hummingbird's distroless builder defaults to a non-root user that can't
-# write to /app — switch to root for the build stage (it's discarded anyway).
-# Same pattern as crunchtools/mcp-airlock.
 USER 0
-
 WORKDIR /build
 
-# hermes-agent is published on PyPI; install into an isolated venv we can
-# copy into the runtime image. Pinned for reproducible builds.
+# Builder needs Python + pip + tar/gzip to fetch signal-cli.
+RUN microdnf install -y --nodocs python3.13 python3.13-pip tar gzip && \
+    microdnf clean all
+
+# hermes-agent is published on PyPI; install into an isolated venv we copy into
+# the runtime image. Pinned for reproducible builds.
+#
+# IMPORTANT: the [mcp] extra pulls mcp>=1.26 which provides
+# mcp.client.streamable_http — required for Hermes to consume the streamable-http
+# MCP servers running on lotor (mcp-slack, mcp-mediawiki, mcp-airlock, etc.).
+# Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
+# never connects, regardless of server availability.
 ARG HERMES_VERSION=0.16.0
 RUN python3.13 -m venv /app/venv && \
-    /app/venv/bin/pip install --no-cache-dir "hermes-agent==${HERMES_VERSION}"
+    /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}"
 
-# signal-cli native binary (GraalVM, no JVM at runtime). Matches the
-# pattern crunchtools/openclaw uses for the same purpose.
+# signal-cli native binary (GraalVM, no JVM at runtime). Matches the pattern
+# crunchtools/openclaw uses for the same purpose.
 ARG SIGNAL_CLI_VERSION=0.14.5
 RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-native.tar.gz" \
         -o /tmp/signal-cli.tar.gz && \
     mkdir -p /build/signal-cli/bin && \
-    python3.13 -c "import tarfile; tarfile.open('/tmp/signal-cli.tar.gz').extractall('/build/signal-cli/bin', filter='data')" && \
-    python3.13 -c "import os; os.chmod('/build/signal-cli/bin/signal-cli', 0o755); os.remove('/tmp/signal-cli.tar.gz')"
+    tar -xzf /tmp/signal-cli.tar.gz -C /build/signal-cli/bin && \
+    chmod +x /build/signal-cli/bin/signal-cli && \
+    rm /tmp/signal-cli.tar.gz
 
-# Stage 2: Minimal runtime — no build tools, no package manager
-FROM quay.io/hummingbird/python:3.13
+# Stage 2: Runtime — UBI10-minimal with Python 3.13 + libstdc++ for signal-cli JNI.
+FROM registry.access.redhat.com/ubi10/ubi-minimal
 
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
 LABEL description="Hermes Agent autonomous AI agent — crunchtools deployment under the Autonomous Agent constitution profile (Signal messaging, weekly orchestration of crunchtools GHA cascade, ops watchers)."
@@ -52,18 +66,16 @@ LABEL org.opencontainers.image.description="Hermes Agent containerized for crunc
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="crunchtools"
 
+USER 0
+# Runtime needs Python 3.13 (to run hermes-agent), ca-certs for HTTPS, and
+# libstdc++ which signal-cli's GraalVM JNI bridge dlopen()s at startup.
+RUN microdnf install -y --nodocs python3.13 ca-certificates libstdc++ && \
+    microdnf clean all
+
 WORKDIR /app
 
-# Bring in the installed hermes-agent venv and signal-cli native binary
 COPY --from=builder /app/venv /app/venv
 COPY --from=builder /build/signal-cli /app/signal-cli
-
-# signal-cli's GraalVM native binary extracts a JNI bridge to /tmp at startup
-# (libsignal_jni_amd64.so) and dlopen()s it — that .so depends on libstdc++.so.6
-# which the distroless Hummingbird python:3.13 runtime doesn't carry (pure Python
-# doesn't need C++ runtime). Copy libstdc++ from the builder stage. Same pattern
-# as crunchtools/mcp-airlock.
-COPY --from=builder /usr/lib64/libstdc++.so.6* /usr/lib64/
 
 ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
     HOME=/app \
