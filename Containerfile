@@ -96,7 +96,12 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 # rather than shell because there's a chicken-and-egg problem: `ln -sf` is itself
 # part of coreutils, but the coreutils symlinks don't exist until this RUN
 # finishes. Python's os.symlink hits the libc syscall directly — no shell, no ln.
+#
+# USER 0 first because the Hummingbird python:3.13 base defaults to UID 65532
+# which can't write into /bin or /usr/bin. Switch back to that default after.
+USER 0
 RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch'.split()]"]
+USER 65532
 
 ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
     HOME=/app \
