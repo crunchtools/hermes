@@ -92,16 +92,11 @@ COPY --from=builder /usr/bin/coreutils /usr/bin/coreutils
 # libattr are missing from the coreutils dependency closure.
 COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 
-# Create /bin/sh + /bin/bash + the coreutils multi-call symlinks. We use RUN's
-# exec form with an explicit /usr/bin/bash path because /bin/sh doesn't exist
-# yet at this layer.
-RUN ["/usr/bin/bash", "-c", "set -e; \
-mkdir -p /bin; \
-ln -sf /usr/bin/bash /bin/sh; \
-ln -sf /usr/bin/bash /bin/bash; \
-for c in cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch; do \
-  ln -sf /usr/bin/coreutils /usr/bin/$c; \
-done"]
+# Create /bin/sh + /bin/bash + the coreutils multi-call symlinks. We use Python
+# rather than shell because there's a chicken-and-egg problem: `ln -sf` is itself
+# part of coreutils, but the coreutils symlinks don't exist until this RUN
+# finishes. Python's os.symlink hits the libc syscall directly — no shell, no ln.
+RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch'.split()]"]
 
 ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
     HOME=/app \
