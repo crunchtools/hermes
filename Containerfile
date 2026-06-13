@@ -87,7 +87,10 @@ COPY --from=builder /usr/lib64/libstdc++.so.6* /usr/lib64/
 # Hermes expects to be on PATH (ls, cat, echo, grep, etc.).
 COPY --from=builder /usr/bin/bash /usr/bin/bash
 COPY --from=builder /usr/bin/coreutils /usr/bin/coreutils
-COPY --from=builder /usr/lib64/libreadline.so.* /usr/lib64/libtinfo.so.* /usr/lib64/
+# Hummingbird runtime already has libtinfo, libreadline, libsystemd, libselinux,
+# libcap, libpcre2-8, libc, libm, libgcc_s — see the lib audit. Only libacl +
+# libattr are missing from the coreutils dependency closure.
+COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 
 # Create /bin/sh + /bin/bash + the coreutils multi-call symlinks. We use RUN's
 # exec form with an explicit /usr/bin/bash path because /bin/sh doesn't exist
