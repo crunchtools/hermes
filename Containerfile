@@ -110,10 +110,6 @@ ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
 
 EXPOSE 18790
 
-# Health probe via hermes's own self-diagnostic
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD hermes doctor --json >/dev/null 2>&1 || exit 1
-
 # Start the messaging gateway in unattended mode. Signal channel + bot
 # pairing is configured via files under /app/.hermes (bind-mounted).
 ENTRYPOINT ["hermes", "gateway", "run"]
