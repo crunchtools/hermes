@@ -16,6 +16,7 @@ on:
     branches: [main]
     paths:
       - 'Containerfile'
+      - '.trivyignore'
       - '.github/workflows/build.yml'
   pull_request:
     branches: [main]
@@ -64,6 +65,7 @@ jobs:
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
 
       - name: Generate SBOM (Trivy / SPDX-JSON)
         uses: aquasecurity/trivy-action@master
