@@ -38,7 +38,7 @@ WORKDIR /build
 # never connects, regardless of server availability.
 ARG HERMES_VERSION=0.16.0
 RUN python3.13 -m venv /app/venv && \
-    /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp mautrix Markdown
+    /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp "mautrix==0.21.0" Markdown "aiosqlite==0.22.1" "aiohttp-socks==0.11.0"
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
