@@ -37,9 +37,10 @@ WORKDIR /build
 # Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
 # never connects, regardless of server availability.
 ARG HERMES_VERSION=0.16.0
+RUN microdnf install -y cmake gcc-c++ libolm-devel && microdnf clean all
 RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
-        "mautrix==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0"
+        "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0"
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
@@ -82,6 +83,7 @@ COPY --from=builder /build/signal-cli /app/signal-cli
 # doesn't need C++ runtime). Copy libstdc++ from the builder stage. Same pattern
 # as crunchtools/mcp-airlock.
 COPY --from=builder /usr/lib64/libstdc++.so.6* /usr/lib64/
+COPY --from=builder /usr/lib64/libolm.so* /usr/lib64/
 
 # Shell layer: bash + coreutils + their shared libraries from the same builder.
 # These let Python's subprocess module find /bin/sh and the common Unix tools
