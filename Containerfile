@@ -37,7 +37,7 @@ WORKDIR /build
 # Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
 # never connects, regardless of server availability.
 ARG HERMES_VERSION=0.16.0
-RUN microdnf install -y gcc-c++ make && microdnf clean all
+RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
 RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir cmake && \
     /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
