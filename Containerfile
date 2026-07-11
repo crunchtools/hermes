@@ -56,11 +56,11 @@ RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CL
 # and tries to install it at runtime if missing (fails on read-only rootfs).
 # Pre-installing avoids the retry loop and the 10-30s bootstrap delay per restart.
 ARG NODE_VERSION=22.16.0
-RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-        -o /tmp/node.tar.xz && \
+RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+        -o /tmp/node.tar.gz && \
     mkdir -p /build/node && \
-    tar -xf /tmp/node.tar.xz -C /build/node --strip-components=1 && \
-    rm /tmp/node.tar.xz
+    python3.13 -c "import tarfile; t=tarfile.open('/tmp/node.tar.gz'); members=[m for m in t.getmembers()]; prefix=members[0].name.split('/')[0]+'/'; [setattr(m,'name',m.name[len(prefix):]) for m in members if m.name.startswith(prefix)]; t.extractall('/build/node',members=[m for m in members if m.name],filter='data')" && \
+    rm /tmp/node.tar.gz
 
 # Stage 2: Minimal runtime — Hummingbird distroless python:3.13 plus a small
 # shell layer (bash + coreutils) carried over from the builder.
