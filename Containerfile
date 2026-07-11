@@ -52,6 +52,16 @@ RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CL
     python3.13 -c "import tarfile; tarfile.open('/tmp/signal-cli.tar.gz').extractall('/build/signal-cli/bin', filter='data')" && \
     python3.13 -c "import os; os.chmod('/build/signal-cli/bin/signal-cli', 0o755); os.remove('/tmp/signal-cli.tar.gz')"
 
+# Node.js 22 LTS — Hermes's install.sh bootstrap checks for this on every start
+# and tries to install it at runtime if missing (fails on read-only rootfs).
+# Pre-installing avoids the retry loop and the 10-30s bootstrap delay per restart.
+ARG NODE_VERSION=22.16.0
+RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+        -o /tmp/node.tar.xz && \
+    mkdir -p /build/node && \
+    tar -xf /tmp/node.tar.xz -C /build/node --strip-components=1 && \
+    rm /tmp/node.tar.xz
+
 # Stage 2: Minimal runtime — Hummingbird distroless python:3.13 plus a small
 # shell layer (bash + coreutils) carried over from the builder.
 #
@@ -74,9 +84,12 @@ LABEL org.opencontainers.image.vendor="crunchtools"
 
 WORKDIR /app
 
-# Bring in the installed hermes-agent venv and signal-cli native binary
+# Bring in the installed hermes-agent venv, signal-cli, and Node.js
 COPY --from=builder /app/venv /app/venv
 COPY --from=builder /build/signal-cli /app/signal-cli
+COPY --from=builder /build/node/bin/node /usr/bin/node
+COPY --from=builder /build/node/bin/npx /usr/bin/npx
+COPY --from=builder /build/node/lib /usr/lib/node
 
 # signal-cli's GraalVM native binary extracts a JNI bridge to /tmp at startup
 # (libsignal_jni_amd64.so) and dlopen()s it — that .so depends on libstdc++.so.6
@@ -103,7 +116,7 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 # USER 0 first because the Hummingbird python:3.13 base defaults to UID 65532
 # which can't write into /bin or /usr/bin. Switch back to that default after.
 USER 0
-RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch'.split()]"]
+RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
 USER 65532
 
 ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
