@@ -88,8 +88,6 @@ WORKDIR /app
 COPY --from=builder /app/venv /app/venv
 COPY --from=builder /build/signal-cli /app/signal-cli
 COPY --from=builder /build/node/bin/node /usr/bin/node
-COPY --from=builder /build/node/bin/npx /usr/bin/npx
-COPY --from=builder /build/node/lib /usr/lib/node
 
 # signal-cli's GraalVM native binary extracts a JNI bridge to /tmp at startup
 # (libsignal_jni_amd64.so) and dlopen()s it — that .so depends on libstdc++.so.6
