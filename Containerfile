@@ -41,7 +41,8 @@ RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
 RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir cmake && \
     /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
-        "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0"
+        "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0" \
+        pypdf
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
