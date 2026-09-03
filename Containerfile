@@ -44,6 +44,13 @@ RUN python3.13 -m venv /app/venv && \
         "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0" \
         pypdf
 
+# 0.19.0 pulls in Pillow and setuptools, neither of which 0.16.0 carried. Both
+# arrive vulnerable (Trivy: 18 HIGH, 0 CRITICAL -- pillow 12.2.0 and setuptools
+# 70.3.0) and both have fixes upstream, so pin them forward rather than adding
+# them to .trivyignore. Pillow parses untrusted image input and several of these
+# are native heap corruption; that is not a class of bug to wave through a gate.
+RUN /app/venv/bin/pip install --no-cache-dir --upgrade "Pillow>=12.3.0" "setuptools>=78.1.1"
+
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
 ARG SIGNAL_CLI_VERSION=0.14.5
