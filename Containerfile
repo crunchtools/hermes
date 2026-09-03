@@ -36,7 +36,7 @@ WORKDIR /build
 # MCP servers running on lotor (mcp-slack, mcp-mediawiki, mcp-airlock, etc.).
 # Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
 # never connects, regardless of server availability.
-ARG HERMES_VERSION=0.16.0
+ARG HERMES_VERSION=0.19.0
 RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
 RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir cmake && \
