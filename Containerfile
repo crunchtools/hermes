@@ -42,7 +42,9 @@ RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir cmake && \
     /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
         "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0" \
-        pypdf
+        pypdf && \
+    /app/venv/bin/pip install --no-cache-dir --upgrade \
+        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1" "msgpack>=1.2.1"
 
 # CVE remediation for the 0.19.0 dependency tree.
 #
@@ -71,8 +73,6 @@ RUN python3.13 -m venv /app/venv && \
 # rather than failing, so the mismatch against upstream's pins is visible in the
 # build log. Runtime verification against a copy of the real data directory is
 # the actual gate before this reaches production.
-RUN /app/venv/bin/pip install --no-cache-dir --upgrade \
-        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1" "msgpack>=1.2.1"
 
 # Surface the dependency-resolution damage from overriding those pins. Non-fatal
 # on purpose: we expect hermes-agent to declare conflicts against the versions
@@ -157,22 +157,6 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 USER 0
 RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
 
-# Collapse the duplicated venv site-packages tree.
-#
-# In the builder, `python3.13 -m venv` makes lib64/ the real site-packages and
-# lib/ a symlink to it (or the reverse). `COPY --from=builder /app/venv` above
-# DEREFERENCES that symlink, so the runtime image ends up with two real
-# site-packages directories instead of one directory and a link.
-#
-# Two consequences, both bad: the image carries a full duplicate of every
-# installed package, and Trivy scans both copies. That is where the phantom
-# findings came from -- setuptools 70.3.0 and msgpack 1.1.2 kept being reported
-# as vulnerable while the copy under lib/ scanned clean at 84.0.0 and 1.2.2.
-# The stale duplicate was real all along; it just had no path in the summary.
-#
-# Restore the symlink: keep whichever tree is larger (the one pip actually
-# populated) and point the other at it.
-RUN ["/usr/sbin/python3.13", "-c", "import os, shutil; a='/app/venv/lib'; b='/app/venv/lib64';\nimport sys\nif os.path.isdir(a) and os.path.isdir(b) and not os.path.islink(a) and not os.path.islink(b):\n    sa=sum(f.stat().st_size for f in __import__('pathlib').Path(a).rglob('*') if f.is_file())\n    sb=sum(f.stat().st_size for f in __import__('pathlib').Path(b).rglob('*') if f.is_file())\n    keep, drop = (a, b) if sa >= sb else (b, a)\n    shutil.rmtree(drop); os.symlink(os.path.basename(keep), drop)\n    print('venv dedup: kept', keep, '- linked', drop, '->', os.path.basename(keep))\nelse:\n    print('venv dedup: nothing to do')"]
 
 USER 65532
 
