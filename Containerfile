@@ -60,6 +60,9 @@ RUN python3.13 -m venv /app/venv && \
 #                                      the streamable-http client API that
 #                                      hermes-agent 0.19.0 is written against.
 #   setuptools    70.3.0 -> >=78.1.1  (CVE-2025-47273)
+#   msgpack        1.1.2 -> >=1.2.1    (GHSA-6v7p-g79w-8964, OOB read on
+#                                      Unpacker reuse; transitive, unpinned by
+#                                      hermes-agent, so no conflict introduced)
 #
 # RISK: cryptography backs mautrix E2EE (Matrix). mcp backs the streamable-http
 # transport to Trentina and is deliberately NOT forced -- a build-time smoke
@@ -69,7 +72,7 @@ RUN python3.13 -m venv /app/venv && \
 # build log. Runtime verification against a copy of the real data directory is
 # the actual gate before this reaches production.
 RUN /app/venv/bin/pip install --no-cache-dir --upgrade \
-        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1"
+        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1" "msgpack>=1.2.1"
 
 # Surface the dependency-resolution damage from overriding those pins. Non-fatal
 # on purpose: we expect hermes-agent to declare conflicts against the versions
