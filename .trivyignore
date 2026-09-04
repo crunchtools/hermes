@@ -21,3 +21,18 @@ CVE-2026-54283
 CVE-2026-52869
 CVE-2026-52870
 CVE-2026-59950
+
+# setuptools 70.3.0 -> 78.1.1 (CVE-2025-47273, path traversal in
+# setuptools.PackageIndex). The venv's real setuptools IS patched -- it is
+# upgraded to 84.0.0 in the Containerfile and Trivy scans that copy clean.
+# Trivy nonetheless reports a second setuptools at 70.3.0 under its aggregate
+# "Python" target with no corresponding path in the report summary. Searched
+# and NOT found: the runtime base (quay.io/hummingbird/python:3.13, empty
+# site-packages), the builder image /usr tree, and a freshly created venv all
+# come back clean. Source of the 70.3.0 record is unidentified -- ignoring it
+# knowingly rather than pretending it is fixed.
+# Exploitability here is close to nil regardless: PackageIndex is only reached
+# when pip installs from a remote index, and this container never runs pip at
+# runtime. It also has no direct egress -- internal=true network, every tool
+# reached through the Trentina gateway.
+CVE-2025-47273
