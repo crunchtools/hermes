@@ -36,13 +36,53 @@ WORKDIR /build
 # MCP servers running on lotor (mcp-slack, mcp-mediawiki, mcp-airlock, etc.).
 # Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
 # never connects, regardless of server availability.
-ARG HERMES_VERSION=0.16.0
+ARG HERMES_VERSION=0.19.0
 RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
 RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir cmake && \
     /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
         "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0" \
-        pypdf
+        pypdf && \
+    /app/venv/bin/pip install --no-cache-dir --upgrade \
+        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1" "msgpack>=1.2.1"
+
+# CVE remediation for the 0.19.0 dependency tree.
+#
+# hermes-agent 0.19.0 hard-pins its dependencies with `==` (cryptography==46.0.7,
+# Pillow==12.2.0, mcp==1.26.0, starlette==1.0.1). Several of those pinned
+# versions ship known HIGH CVEs, so satisfying the Trivy gate means deliberately
+# overriding upstream's pins. That is a considered trade, not an oversight:
+#
+#   pillow        12.2.0 -> >=12.3.0  (10 CVEs; native heap OOB write + heap
+#                                      corruption, and Pillow parses untrusted
+#                                      image input)
+#   cryptography  46.0.7 -> >=50.0.0  (CVE-2026-69247, CVE-2026-69249)
+#   mcp           1.26.0 -> HELD. See .trivyignore -- forcing it resolves to
+#                                      mcp 2.1.1 (the MCP 2.x SDK) and breaks
+#                                      the streamable-http client API that
+#                                      hermes-agent 0.19.0 is written against.
+#   setuptools    70.3.0 -> >=78.1.1  (CVE-2025-47273)
+#   msgpack        1.1.2 -> >=1.2.1    (GHSA-6v7p-g79w-8964, OOB read on
+#                                      Unpacker reuse; transitive, unpinned by
+#                                      hermes-agent, so no conflict introduced)
+#
+# RISK: cryptography backs mautrix E2EE (Matrix). mcp backs the streamable-http
+# transport to Trentina and is deliberately NOT forced -- a build-time smoke
+# test proved forcing it breaks that transport outright.
+# `pip check` runs below and prints the resulting conflicts
+# rather than failing, so the mismatch against upstream's pins is visible in the
+# build log. Runtime verification against a copy of the real data directory is
+# the actual gate before this reaches production.
+
+# Surface the dependency-resolution damage from overriding those pins. Non-fatal
+# on purpose: we expect hermes-agent to declare conflicts against the versions
+# we forced, and we want to read them, not be blocked by them.
+RUN /app/venv/bin/pip check || true
+
+# Prove the two libraries we forced still import and still expose the entry
+# points this deployment depends on. Cheap, and it catches an ABI break at build
+# time instead of at 3am on lotor.
+RUN ["/app/venv/bin/python", "-c", "import cryptography; from mcp.client.streamable_http import streamablehttp_client; from mautrix.crypto import OlmMachine; print('cryptography', cryptography.__version__, '- mautrix OlmMachine OK - mcp streamablehttp_client OK')"]
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
@@ -116,6 +156,8 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 # which can't write into /bin or /usr/bin. Switch back to that default after.
 USER 0
 RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
+
+
 USER 65532
 
 ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
