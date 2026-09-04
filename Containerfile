@@ -55,17 +55,21 @@ RUN python3.13 -m venv /app/venv && \
 #                                      corruption, and Pillow parses untrusted
 #                                      image input)
 #   cryptography  46.0.7 -> >=50.0.0  (CVE-2026-69247, CVE-2026-69249)
-#   mcp           1.26.0 -> >=1.28.1  (CVE-2026-52869/52870/59950)
+#   mcp           1.26.0 -> HELD. See .trivyignore -- forcing it resolves to
+#                                      mcp 2.1.1 (the MCP 2.x SDK) and breaks
+#                                      the streamable-http client API that
+#                                      hermes-agent 0.19.0 is written against.
 #   setuptools    70.3.0 -> >=78.1.1  (CVE-2025-47273)
 #
-# RISK: cryptography backs mautrix E2EE (Matrix) and mcp backs the
-# streamable-http transport to Trentina -- the two libraries Kagetora cannot
-# function without. `pip check` runs below and prints the resulting conflicts
+# RISK: cryptography backs mautrix E2EE (Matrix). mcp backs the streamable-http
+# transport to Trentina and is deliberately NOT forced -- a build-time smoke
+# test proved forcing it breaks that transport outright.
+# `pip check` runs below and prints the resulting conflicts
 # rather than failing, so the mismatch against upstream's pins is visible in the
 # build log. Runtime verification against a copy of the real data directory is
 # the actual gate before this reaches production.
 RUN /app/venv/bin/pip install --no-cache-dir --upgrade \
-        "Pillow>=12.3.0" "cryptography>=50.0.0" "mcp>=1.28.1" "setuptools>=78.1.1"
+        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1"
 
 # Surface the dependency-resolution damage from overriding those pins. Non-fatal
 # on purpose: we expect hermes-agent to declare conflicts against the versions
@@ -75,7 +79,7 @@ RUN /app/venv/bin/pip check || true
 # Prove the two libraries we forced still import and still expose the entry
 # points this deployment depends on. Cheap, and it catches an ABI break at build
 # time instead of at 3am on lotor.
-RUN ["/app/venv/bin/python", "-c", "import cryptography, mcp; from mcp.client.streamable_http import streamablehttp_client; print('cryptography', cryptography.__version__); print('mcp', getattr(mcp, \"__version__\", \"?\"), 'streamable_http OK')"]
+RUN ["/app/venv/bin/python", "-c", "import cryptography; from mcp.client.streamable_http import streamablehttp_client; from mautrix.crypto import OlmMachine; print('cryptography', cryptography.__version__, '- mautrix OlmMachine OK - mcp streamablehttp_client OK')"]
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
