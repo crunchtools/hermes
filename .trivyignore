@@ -1,22 +1,53 @@
-# pip's vendored bundle: msgpack 1.1.2 and setuptools/pkg_resources 70.3.0.
+# ── Accepted: reachability CVEs that this deployment's isolation neutralises ──
+#
+# Kagetora runs on the crunchtools-kagetora Podman network: internal=true,
+# dns_enabled=false, nothing published to the host, and exactly two containers
+# on it (kagetora and mcp-trentina). Every CVE below requires an attacker to
+# CONNECT to this container. Nothing can, short of already owning Trentina.
+#
+# MCP Python SDK 1.26.0 -> 1.27.2/1.28.1. All three are server-transport bugs:
+# HTTP transport session handling, experimental task handlers accepting any
+# client, WebSocket server transport. Cannot be fixed in place -- hermes-agent
+# 0.19.0 pins mcp==1.26.0 and is written against the 1.x client API; forcing it
+# resolves to mcp 2.1.1 and breaks the import Kagetora needs (verified by a
+# build-time smoke test, not assumed). Upstream fixes this properly in 0.21.0,
+# which ships mcp 2.0.0.
+CVE-2026-52869
+CVE-2026-52870
+CVE-2026-59950
+#
+# Starlette 1.0.1 -> 1.1.0/1.3.1. Also server-side: SSRF via UNC paths in
+# StaticFiles, and form limits being ignored (DoS). The SSRF is doubly dead
+# here -- SSRF needs somewhere to send the request and this container has no
+# egress at all. Fixed upstream in 0.21.0 (starlette 1.3.1).
+CVE-2026-48818
+CVE-2026-54283
+#
+# PyJWT 2.12.1 -> 2.13.0, auth bypass via forged JWTs. The most serious in
+# class, and the one that would matter first if the network boundary ever
+# slipped -- but it still requires reaching the socket. Fixed upstream in
+# 0.21.0 (PyJWT 2.13.0). Worth revisiting the moment 0.21 becomes reachable.
+CVE-2026-48526
+
+# ── Accepted: pip's own vendored bundle, not packages Hermes imports ──
 #
 #   GHSA-6v7p-g79w-8964  msgpack     OOB read on Unpacker reuse
 #   CVE-2025-47273       setuptools  path traversal in PackageIndex
 #
-# These are pip's own frozen copies under site-packages/pip/_vendor/, not
-# packages Hermes imports (confirmed by reading the built image: the vendored
-# msgpack/__init__.py declares version (1, 1, 2), with pkg_resources beside it).
-# Trivy files them under its aggregate "Python" target with no path in the
-# report summary and no "(METADATA)" marker -- that missing marker is the tell.
+# These live in site-packages/pip/_vendor/ (confirmed by reading the built
+# image: the vendored msgpack/__init__.py declares version (1, 1, 2), with
+# pkg_resources beside it). Trivy files them under its aggregate "Python"
+# target with no path in the report summary and no "(METADATA)" marker -- that
+# missing marker is the tell, and chasing it cost three wrong theories.
 #
 # Not fixable: the versions are frozen inside pip. Removing pip is unsafe
 # because Hermes lazy-installs skill dependencies at runtime. Both are only
 # reachable through pip's own index traffic, which this container cannot
-# originate -- internal=true network, no direct egress, all tools via Trentina.
+# originate.
 GHSA-6v7p-g79w-8964
 CVE-2025-47273
 
-# NOTE: the PyJWT, Starlette and MCP SDK entries that used to live here are
-# gone on purpose. Hermes 0.21.0 ships PyJWT 2.13.0, starlette 1.3.1 and
-# mcp 2.0.0, all of which carry the fixes. Building from upstream's lockfile
-# retired them rather than suppressing them.
+# NOTE: Pillow is deliberately NOT ignored. It is the one finding this
+# deployment's isolation does not cover -- Matrix delivers internet-originated
+# images into a vision-enabled agent and Pillow parses them -- so it is patched
+# forward in the Containerfile instead.

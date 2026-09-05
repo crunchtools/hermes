@@ -28,31 +28,34 @@ USER 0
 
 WORKDIR /build
 
-# Install Hermes the way upstream actually supports it.
+# Install hermes-agent from PyPI, using UPSTREAM'S OWN EXTRAS.
 #
-# Upstream's install.sh clones this repo and runs `uv sync --locked` against the
-# committed uv.lock, which hash-pins every dependency. PyPI is NOT their
-# distribution channel -- it is a side artifact that has been stale since
-# 2026-07-20 (0.19.0), missing 0.19.1 and all of 0.20.x/0.21.0. Building from
-# PyPI meant running a version upstream no longer ships, on a dependency set
-# they never test together, with our own hand-rebuilt copy of the [matrix]
-# extra that drifted on aiohttp and broke Matrix in production.
+# Why not build from upstream's git tag (v0.21.0)? Because they block it:
+#   RuntimeError: Building wheels or sdists for hermes-agent is not supported.
+#   Hermes is distributed via the shell installer, Docker image, or Nix.
+# Their own Dockerfile works around this with `uv sync --no-install-project`
+# plus running from the source tree -- but that image is 465 lines on
+# debian:13.4 with npm builds for the web/TUI assets, a patched SQLite for
+# FTS5, and Playwright. Reproducing it on Hummingbird is a project, not a
+# build tweak, and adopting their Debian image outright would break the base
+# image rule in the Autonomous Agent profile (Section III).
 #
-# Building from the tag with the lockfile removes that whole class of problem
-# and, as a bonus, retires every CVE override this file used to carry: 0.21.0
-# already ships Pillow 12.3.0, cryptography 50.0.0, PyJWT 2.13.0,
-# starlette 1.3.1 and mcp 2.0.0.
-ARG HERMES_REF=v2026.8.31
-
-RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
-
+# So PyPI it is -- 0.19.0 is the newest wheel they publish (PyPI has been
+# stale since 2026-07-20; 0.19.1 and all of 0.20.x/0.21.0 are git-only).
+#
+# The important change is HOW we install. This used to hand-list the packages
+# that upstream's [matrix] extra already declares, and drifted on exactly one
+# pin -- aiohttp unpinned resolved to 3.14.3 where 0.19.0 demands 3.14.1 --
+# which broke Matrix in production. Naming the extras instead makes that class
+# of drift impossible: upstream's pins win, every time.
+#
 # Extras chosen for the Kagetora personal-assistant deployment:
 #   mcp     Trentina gateway -- every tool the agent has
 #   matrix  primary chat interface
 #   vision  image recognition (zero deps; core Pillow does the work)
 #   cron    scheduled jobs (zero deps)
-#   pty     terminal support (zero deps; ptyprocess is core)
-#   web     gateway HTTP surface (fastapi/uvicorn are core; pins starlette)
+#   pty     terminal support (zero deps)
+#   web     gateway HTTP surface
 #   youtube transcript extraction -- one dep, useful for a PA
 #
 # Deliberately NOT installed: google (reached via Trentina's gw-* backends),
@@ -61,38 +64,40 @@ RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
 # device in a container), every LLM provider extra (the LLM is a custom
 # OpenAI-compatible endpoint behind Trentina; openai is core), search and
 # memory backends (Trentina again), and computer-use (headless).
-ARG HERMES_EXTRAS="--extra mcp --extra matrix --extra vision --extra cron --extra pty --extra web --extra youtube"
+ARG HERMES_VERSION=0.19.0
+RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
+RUN python3.13 -m venv /app/venv && \
+    /app/venv/bin/pip install --no-cache-dir cmake && \
+    /app/venv/bin/pip install --no-cache-dir \
+        "hermes-agent[mcp,matrix,vision,cron,pty,web,youtube]==${HERMES_VERSION}" \
+        pypdf && \
+    /app/venv/bin/pip install --no-cache-dir --upgrade "Pillow>=12.3.0"
 
-ENV UV_PROJECT_ENVIRONMENT=/app/venv
-RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
+# Pillow is the ONE override kept, and only because network isolation does not
+# cover it. Trentina is a network boundary, not a content filter: Matrix
+# delivers internet-originated images straight into a vision-enabled agent, and
+# Pillow parses them. CVE-2026-59197 and CVE-2026-59205 are native heap
+# out-of-bounds write and controlled heap corruption respectively -- reachable
+# by anyone who can send Kagetora a picture. 0.19.0 pins Pillow==12.2.0; 12.3.0
+# is what upstream themselves moved to in 0.21.0, so this tracks their fix
+# rather than inventing one.
+#
+# Every other CVE override was dropped. The mcp, Starlette and PyJWT findings
+# are server-side or auth-side: they require reaching this container's socket,
+# and nothing can -- internal=true network, nothing published to the host, two
+# containers on it. Those are accepted in .trivyignore with that reasoning.
 
-RUN git clone --depth 1 --branch "${HERMES_REF}" \
-        https://github.com/NousResearch/hermes-agent.git /build/hermes
-
-# --locked fails rather than silently re-resolving if uv.lock does not match
-# pyproject.toml, so a drifted upstream tag is a build failure, not a surprise
-# at runtime. --no-editable installs the project into the venv proper; the
-# default editable install would leave /app/venv pointing at /build/hermes,
-# which does not exist in the runtime stage.
-WORKDIR /build/hermes
-RUN /opt/uvenv/bin/uv sync --locked --no-editable ${HERMES_EXTRAS}
-
-# crunchtools additions upstream does not declare.
-RUN /app/venv/bin/pip install --no-cache-dir pypdf
-
-# Record what we actually built, and fail loudly if the pieces Kagetora cannot
-# live without are missing. mautrix backs Matrix; the mcp client backs every
-# tool call through Trentina. Deliberately does NOT assert a specific mcp
-# client symbol -- that import moved between mcp 1.x and 2.x and pinning the
-# assertion to one spelling is how this test would rot.
+# Fail the build if the pieces Kagetora cannot live without are missing, and
+# print resolved versions so a dependency surprise is visible in the log.
+# Does NOT assert a specific mcp client symbol: that import moved between
+# mcp 1.x and 2.x, and pinning the assertion to one spelling is how this test
+# would rot the next time we move versions.
 RUN /app/venv/bin/python -c "import importlib.metadata as m; \
-    print('hermes-agent', m.version('hermes-agent')); \
-    import mcp, mautrix, PIL, cryptography; \
-    print('mcp', m.version('mcp'), '| mautrix', m.version('mautrix'), \
+    import mcp, mautrix, PIL, cryptography, aiohttp; \
+    print('hermes-agent', m.version('hermes-agent'), '| mcp', m.version('mcp'), \
+          '| mautrix', m.version('mautrix'), '| aiohttp', m.version('aiohttp'), \
           '| Pillow', m.version('pillow'), '| cryptography', cryptography.__version__)"
 RUN /app/venv/bin/pip check || true
-
-WORKDIR /build
 
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
