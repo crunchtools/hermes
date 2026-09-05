@@ -59,8 +59,12 @@ RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
 # which is both the wrong version (it picked 3.11, the floor in pyproject) and
 # a path that is a tmpfs at runtime. The venv then works in the builder and
 # dies on first exec in the runtime image.
-ENV UV_PYTHON=/usr/sbin/python3.13 \
-    UV_PYTHON_DOWNLOADS=never \
+# Only ever use the image's own interpreter -- never let uv provision one.
+# NOT UV_PYTHON: that is a global default and it hijacks `uv pip install`,
+# retargeting it at the system interpreter instead of the project venv, so the
+# editable install lands somewhere else and no console script is created. The
+# interpreter is chosen per-command below instead.
+ENV UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON_PREFERENCE=only-system
 
 RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
@@ -74,7 +78,8 @@ WORKDIR /app/hermes
 RUN /opt/uvenv/bin/uv sync --frozen --no-install-project --python /usr/sbin/python3.13 ${HERMES_EXTRAS}
 # Step 2: the project itself, editable and without touching deps. This is what
 # creates .venv/bin/hermes without going near the blocked wheel path.
-RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps -e "."
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
+        --python /app/hermes/.venv/bin/python -e "."
 
 # crunchtools addition upstream does not declare.
 # uv-created venvs ship no pip, so add it with uv rather than assuming one.
