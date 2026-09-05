@@ -71,7 +71,7 @@ RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir \
         "hermes-agent[mcp,matrix,vision,cron,pty,web,youtube]==${HERMES_VERSION}" \
         pypdf && \
-    /app/venv/bin/pip install --no-cache-dir --upgrade "Pillow>=12.3.0"
+    /app/venv/bin/pip install --no-cache-dir --upgrade "Pillow>=12.3.0" "cryptography>=50.0.0"
 
 # Pillow is the ONE override kept, and only because network isolation does not
 # cover it. Trentina is a network boundary, not a content filter: Matrix
