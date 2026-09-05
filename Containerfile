@@ -68,7 +68,8 @@ RUN /opt/uvenv/bin/uv sync --frozen --no-install-project ${HERMES_EXTRAS}
 RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps -e "."
 
 # crunchtools addition upstream does not declare.
-RUN /build/hermes/.venv/bin/pip install --no-cache-dir pypdf
+# uv-created venvs ship no pip, so add it with uv rather than assuming one.
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /build/hermes/.venv/bin/python pypdf
 
 # Report what actually landed, and fail the build if the pieces Kagetora cannot
 # run without are missing.
