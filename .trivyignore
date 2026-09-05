@@ -1,8 +1,22 @@
-# Intentionally empty.
+# Hermes 0.21.0, built exactly as upstream prescribes: their git tag, their
+# uv.lock, no overrides. Hermes's own dependency tree scans CLEAN.
 #
-# This image is built exactly the way upstream prescribes: their git tag, their
-# uv.lock, no overrides and no pinning of our own. The CVE posture is therefore
-# whatever upstream ships, reported honestly rather than suppressed.
+# Every remaining finding lives inside pip's vendored bundle
+# (site-packages/pip/_vendor/), not in a package Hermes imports. Confirmed by
+# reading a built image: the vendored msgpack/__init__.py declares (1, 1, 2),
+# with pkg_resources beside it. Trivy files them under its aggregate "Python"
+# target with no path in the report summary and no "(METADATA)" marker.
 #
-# Entries get added here only after a deliberate accept-the-risk decision, each
-# with the reasoning written down.
+# Not fixable: the versions are frozen inside pip itself. Removing pip is
+# unsafe because Hermes lazy-installs skill dependencies at runtime.
+#
+# Not reachable: all three require pip to talk to a package index. This
+# container never runs pip at runtime, has no direct egress (internal=true
+# network), and reaches every tool through the Trentina gateway.
+#
+#   HIGH    GHSA-6v7p-g79w-8964  msgpack 1.1.2      OOB read / crash on Unpacker reuse
+#   HIGH    CVE-2025-47273       setuptools 70.3.0  path traversal in PackageIndex
+#   MEDIUM  CVE-2026-59890       setuptools 83.0.0  MANIFEST.in exclusion bypass
+GHSA-6v7p-g79w-8964
+CVE-2025-47273
+CVE-2026-59890
