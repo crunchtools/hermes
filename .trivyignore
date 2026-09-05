@@ -1,46 +1,22 @@
-# Upstream hermes-agent v0.16.0 dependencies — awaiting upstream fix
-# PyJWT 2.12.1 → 2.13.0 (auth bypass via forged JWTs)
-CVE-2026-48526
-# Starlette 1.0.1 → 1.1.0 (SSRF via UNC paths in StaticFiles)
-CVE-2026-48818
-# Starlette 1.0.1 → 1.3.1 (form limits silently ignored, DoS)
-CVE-2026-54283
-
-# mcp 1.26.0 -> 1.27.2/1.28.1 (MCP Python SDK: HTTP transport session handling,
-# experimental task handlers, WebSocket transport). HELD, not fixable here:
-# hermes-agent 0.19.0 pins mcp==1.26.0 and is written against the 1.x client
-# API. Forcing the fix resolves to mcp 2.1.1 (the MCP 2.x SDK) and breaks the
-# import Kagetora depends on:
-#   ImportError: cannot import name 'streamablehttp_client'
-#                from 'mcp.client.streamable_http'
-# Verified by the build-time smoke test, not assumed. Mitigation: the agent runs
-# on an internal=true network with no direct egress and reaches every tool
-# through the Trentina gateway, so the HTTP/WebSocket transport surface these
-# CVEs describe is not exposed. Upstream resolves this in 0.20.x via their MCP
-# 2.x SDK migration -- revisit when 0.20/0.21 reach PyPI.
-CVE-2026-52869
-CVE-2026-52870
-CVE-2026-59950
-
 # pip's vendored bundle: msgpack 1.1.2 and setuptools/pkg_resources 70.3.0.
 #
 #   GHSA-6v7p-g79w-8964  msgpack     OOB read on Unpacker reuse
 #   CVE-2025-47273       setuptools  path traversal in PackageIndex
 #
-# These are NOT the packages Hermes uses. The real ones are patched in the
-# Containerfile and scan clean -- msgpack 1.2.2, setuptools 84.0.0. What Trivy
-# reports here is /app/venv/lib/python3.13/site-packages/pip/_vendor/, which
-# ships its own frozen copies (confirmed directly in the built image: the
-# vendored msgpack/__init__.py declares version 1, 1, 2, and pkg_resources sits
-# alongside it). They appear under Trivy's aggregate "Python" target with no
-# path in the report summary, which is why they looked like phantoms and
-# survived three wrong theories -- a duplicated lib64 tree, layer history, and
-# a stale CI cache. All three were wrong; it was pip's vendor directory.
+# These are pip's own frozen copies under site-packages/pip/_vendor/, not
+# packages Hermes imports (confirmed by reading the built image: the vendored
+# msgpack/__init__.py declares version (1, 1, 2), with pkg_resources beside it).
+# Trivy files them under its aggregate "Python" target with no path in the
+# report summary and no "(METADATA)" marker -- that missing marker is the tell.
 #
-# Not fixable by upgrading: the versions are frozen inside pip itself. Deleting
-# pip is not safe either -- Hermes can lazy-install skill dependencies at
-# runtime. Both are only reachable through pip's own HTTP cache path, i.e. only
-# if pip talks to a package index, and this container has no direct egress
-# (internal=true network, every tool via the Trentina gateway).
+# Not fixable: the versions are frozen inside pip. Removing pip is unsafe
+# because Hermes lazy-installs skill dependencies at runtime. Both are only
+# reachable through pip's own index traffic, which this container cannot
+# originate -- internal=true network, no direct egress, all tools via Trentina.
 GHSA-6v7p-g79w-8964
 CVE-2025-47273
+
+# NOTE: the PyJWT, Starlette and MCP SDK entries that used to live here are
+# gone on purpose. Hermes 0.21.0 ships PyJWT 2.13.0, starlette 1.3.1 and
+# mcp 2.0.0, all of which carry the fixes. Building from upstream's lockfile
+# retired them rather than suppressing them.

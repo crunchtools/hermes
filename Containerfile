@@ -28,61 +28,72 @@ USER 0
 
 WORKDIR /build
 
-# hermes-agent is published on PyPI; install into an isolated venv we can
-# copy into the runtime image. Pinned for reproducible builds.
+# Install Hermes the way upstream actually supports it.
 #
-# IMPORTANT: the [mcp] extra pulls mcp>=1.26 which provides
-# mcp.client.streamable_http — required for Hermes to consume the streamable-http
-# MCP servers running on lotor (mcp-slack, mcp-mediawiki, mcp-airlock, etc.).
-# Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
-# never connects, regardless of server availability.
-ARG HERMES_VERSION=0.19.0
-RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
-RUN python3.13 -m venv /app/venv && \
-    /app/venv/bin/pip install --no-cache-dir cmake && \
-    /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
-        "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0" \
-        pypdf && \
-    /app/venv/bin/pip install --no-cache-dir --upgrade \
-        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1" "msgpack>=1.2.1"
+# Upstream's install.sh clones this repo and runs `uv sync --locked` against the
+# committed uv.lock, which hash-pins every dependency. PyPI is NOT their
+# distribution channel -- it is a side artifact that has been stale since
+# 2026-07-20 (0.19.0), missing 0.19.1 and all of 0.20.x/0.21.0. Building from
+# PyPI meant running a version upstream no longer ships, on a dependency set
+# they never test together, with our own hand-rebuilt copy of the [matrix]
+# extra that drifted on aiohttp and broke Matrix in production.
+#
+# Building from the tag with the lockfile removes that whole class of problem
+# and, as a bonus, retires every CVE override this file used to carry: 0.21.0
+# already ships Pillow 12.3.0, cryptography 50.0.0, PyJWT 2.13.0,
+# starlette 1.3.1 and mcp 2.0.0.
+ARG HERMES_REF=v2026.8.31
 
-# CVE remediation for the 0.19.0 dependency tree.
-#
-# hermes-agent 0.19.0 hard-pins its dependencies with `==` (cryptography==46.0.7,
-# Pillow==12.2.0, mcp==1.26.0, starlette==1.0.1). Several of those pinned
-# versions ship known HIGH CVEs, so satisfying the Trivy gate means deliberately
-# overriding upstream's pins. That is a considered trade, not an oversight:
-#
-#   pillow        12.2.0 -> >=12.3.0  (10 CVEs; native heap OOB write + heap
-#                                      corruption, and Pillow parses untrusted
-#                                      image input)
-#   cryptography  46.0.7 -> >=50.0.0  (CVE-2026-69247, CVE-2026-69249)
-#   mcp           1.26.0 -> HELD. See .trivyignore -- forcing it resolves to
-#                                      mcp 2.1.1 (the MCP 2.x SDK) and breaks
-#                                      the streamable-http client API that
-#                                      hermes-agent 0.19.0 is written against.
-#   setuptools    70.3.0 -> >=78.1.1  (CVE-2025-47273)
-#   msgpack        1.1.2 -> >=1.2.1    (GHSA-6v7p-g79w-8964, OOB read on
-#                                      Unpacker reuse; transitive, unpinned by
-#                                      hermes-agent, so no conflict introduced)
-#
-# RISK: cryptography backs mautrix E2EE (Matrix). mcp backs the streamable-http
-# transport to Trentina and is deliberately NOT forced -- a build-time smoke
-# test proved forcing it breaks that transport outright.
-# `pip check` runs below and prints the resulting conflicts
-# rather than failing, so the mismatch against upstream's pins is visible in the
-# build log. Runtime verification against a copy of the real data directory is
-# the actual gate before this reaches production.
+RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
 
-# Surface the dependency-resolution damage from overriding those pins. Non-fatal
-# on purpose: we expect hermes-agent to declare conflicts against the versions
-# we forced, and we want to read them, not be blocked by them.
+# Extras chosen for the Kagetora personal-assistant deployment:
+#   mcp     Trentina gateway -- every tool the agent has
+#   matrix  primary chat interface
+#   vision  image recognition (zero deps; core Pillow does the work)
+#   cron    scheduled jobs (zero deps)
+#   pty     terminal support (zero deps; ptyprocess is core)
+#   web     gateway HTTP surface (fastapi/uvicorn are core; pins starlette)
+#   youtube transcript extraction -- one dep, useful for a PA
+#
+# Deliberately NOT installed: google (reached via Trentina's gw-* backends),
+# messaging (discord.py/telegram/slack -- Matrix is the interface, and a lazy
+# discord install once blocked startup for minutes), voice/wake/tts (no audio
+# device in a container), every LLM provider extra (the LLM is a custom
+# OpenAI-compatible endpoint behind Trentina; openai is core), search and
+# memory backends (Trentina again), and computer-use (headless).
+ARG HERMES_EXTRAS="--extra mcp --extra matrix --extra vision --extra cron --extra pty --extra web --extra youtube"
+
+ENV UV_PROJECT_ENVIRONMENT=/app/venv
+RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
+
+RUN git clone --depth 1 --branch "${HERMES_REF}" \
+        https://github.com/NousResearch/hermes-agent.git /build/hermes
+
+# --locked fails rather than silently re-resolving if uv.lock does not match
+# pyproject.toml, so a drifted upstream tag is a build failure, not a surprise
+# at runtime. --no-editable installs the project into the venv proper; the
+# default editable install would leave /app/venv pointing at /build/hermes,
+# which does not exist in the runtime stage.
+WORKDIR /build/hermes
+RUN /opt/uvenv/bin/uv sync --locked --no-editable ${HERMES_EXTRAS}
+
+# crunchtools additions upstream does not declare.
+RUN /app/venv/bin/pip install --no-cache-dir pypdf
+
+# Record what we actually built, and fail loudly if the pieces Kagetora cannot
+# live without are missing. mautrix backs Matrix; the mcp client backs every
+# tool call through Trentina. Deliberately does NOT assert a specific mcp
+# client symbol -- that import moved between mcp 1.x and 2.x and pinning the
+# assertion to one spelling is how this test would rot.
+RUN /app/venv/bin/python -c "import importlib.metadata as m; \
+    print('hermes-agent', m.version('hermes-agent')); \
+    import mcp, mautrix, PIL, cryptography; \
+    print('mcp', m.version('mcp'), '| mautrix', m.version('mautrix'), \
+          '| Pillow', m.version('pillow'), '| cryptography', cryptography.__version__)"
 RUN /app/venv/bin/pip check || true
 
-# Prove the two libraries we forced still import and still expose the entry
-# points this deployment depends on. Cheap, and it catches an ABI break at build
-# time instead of at 3am on lotor.
-RUN ["/app/venv/bin/python", "-c", "import cryptography; from mcp.client.streamable_http import streamablehttp_client; from mautrix.crypto import OlmMachine; print('cryptography', cryptography.__version__, '- mautrix OlmMachine OK - mcp streamablehttp_client OK')"]
+WORKDIR /build
+
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
