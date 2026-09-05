@@ -54,6 +54,15 @@ ARG HERMES_REF=v2026.8.31
 ARG HERMES_EXTRAS="--extra mcp --extra matrix --extra vision --extra cron --extra pty --extra web --extra youtube"
 
 RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
+# Pin uv to the image's own interpreter. Left to itself uv downloads a managed
+# CPython into /tmp/.local/share/uv/python/ and builds the venv against that --
+# which is both the wrong version (it picked 3.11, the floor in pyproject) and
+# a path that is a tmpfs at runtime. The venv then works in the builder and
+# dies on first exec in the runtime image.
+ENV UV_PYTHON=/usr/sbin/python3.13 \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PYTHON_PREFERENCE=only-system
+
 RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
 
 RUN git clone --depth 1 --branch "${HERMES_REF}" \
@@ -62,7 +71,7 @@ RUN git clone --depth 1 --branch "${HERMES_REF}" \
 WORKDIR /app/hermes
 # Step 1: dependency closure straight from uv.lock. --frozen uses the lockfile
 # as committed rather than re-resolving.
-RUN /opt/uvenv/bin/uv sync --frozen --no-install-project ${HERMES_EXTRAS}
+RUN /opt/uvenv/bin/uv sync --frozen --no-install-project --python /usr/sbin/python3.13 ${HERMES_EXTRAS}
 # Step 2: the project itself, editable and without touching deps. This is what
 # creates .venv/bin/hermes without going near the blocked wheel path.
 RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps -e "."
@@ -162,6 +171,13 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 USER 0
 RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
 
+
+# Prove the shipped venv actually executes in THIS image. The builder-stage
+# check passed while the runtime image was broken, twice: once on a stale
+# shebang path, once on a venv bound to a downloaded interpreter that does not
+# exist here. Running the entry point after the COPY is the only check that
+# sees either.
+RUN ["/app/hermes/.venv/bin/hermes", "--version"]
 
 USER 65532
 
