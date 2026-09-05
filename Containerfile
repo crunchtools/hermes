@@ -28,61 +28,59 @@ USER 0
 
 WORKDIR /build
 
-# hermes-agent is published on PyPI; install into an isolated venv we can
-# copy into the runtime image. Pinned for reproducible builds.
+# Install Hermes exactly the way upstream does it.
 #
-# IMPORTANT: the [mcp] extra pulls mcp>=1.26 which provides
-# mcp.client.streamable_http — required for Hermes to consume the streamable-http
-# MCP servers running on lotor (mcp-slack, mcp-mediawiki, mcp-airlock, etc.).
-# Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
-# never connects, regardless of server availability.
-ARG HERMES_VERSION=0.19.0
-RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
-RUN python3.13 -m venv /app/venv && \
-    /app/venv/bin/pip install --no-cache-dir cmake && \
-    /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
-        "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0" \
-        pypdf && \
-    /app/venv/bin/pip install --no-cache-dir --upgrade \
-        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1" "msgpack>=1.2.1"
+# Upstream does not publish to PyPI (stale since 0.19.0, 2026-07-20) and
+# deliberately blocks wheel/sdist builds from source:
+#   "Building wheels or sdists for hermes-agent is not supported.
+#    Hermes is distributed via the shell installer, Docker image, or Nix."
+#
+# Their own Dockerfile's sequence, reproduced here verbatim in shape:
+#   1. uv sync --frozen --no-install-project <extras>   -- dependencies only
+#   2. bring in the source
+#   3. uv pip install --no-deps -e "."                  -- editable, no wheel
+#
+# No version overrides, no forced upgrades, no dependency pinning of our own.
+# uv.lock decides everything; whatever CVEs that implies are reported, not
+# fought. That is the point of building it their way.
+ARG HERMES_REF=v2026.8.31
 
-# CVE remediation for the 0.19.0 dependency tree.
-#
-# hermes-agent 0.19.0 hard-pins its dependencies with `==` (cryptography==46.0.7,
-# Pillow==12.2.0, mcp==1.26.0, starlette==1.0.1). Several of those pinned
-# versions ship known HIGH CVEs, so satisfying the Trivy gate means deliberately
-# overriding upstream's pins. That is a considered trade, not an oversight:
-#
-#   pillow        12.2.0 -> >=12.3.0  (10 CVEs; native heap OOB write + heap
-#                                      corruption, and Pillow parses untrusted
-#                                      image input)
-#   cryptography  46.0.7 -> >=50.0.0  (CVE-2026-69247, CVE-2026-69249)
-#   mcp           1.26.0 -> HELD. See .trivyignore -- forcing it resolves to
-#                                      mcp 2.1.1 (the MCP 2.x SDK) and breaks
-#                                      the streamable-http client API that
-#                                      hermes-agent 0.19.0 is written against.
-#   setuptools    70.3.0 -> >=78.1.1  (CVE-2025-47273)
-#   msgpack        1.1.2 -> >=1.2.1    (GHSA-6v7p-g79w-8964, OOB read on
-#                                      Unpacker reuse; transitive, unpinned by
-#                                      hermes-agent, so no conflict introduced)
-#
-# RISK: cryptography backs mautrix E2EE (Matrix). mcp backs the streamable-http
-# transport to Trentina and is deliberately NOT forced -- a build-time smoke
-# test proved forcing it breaks that transport outright.
-# `pip check` runs below and prints the resulting conflicts
-# rather than failing, so the mismatch against upstream's pins is visible in the
-# build log. Runtime verification against a copy of the real data directory is
-# the actual gate before this reaches production.
+# Extras for the Kagetora personal-assistant deployment. vision, cron and pty
+# carry zero dependencies -- image recognition is a feature flag over core
+# Pillow. Left out: google (reached via Trentina's gw-* backends), messaging
+# (discord/telegram/slack -- Matrix is the interface), voice/wake/tts (no audio
+# device), the LLM provider extras (custom OpenAI-compatible endpoint behind
+# Trentina), search/memory backends (Trentina), computer-use (headless).
+ARG HERMES_EXTRAS="--extra mcp --extra matrix --extra vision --extra cron --extra pty --extra web --extra youtube"
 
-# Surface the dependency-resolution damage from overriding those pins. Non-fatal
-# on purpose: we expect hermes-agent to declare conflicts against the versions
-# we forced, and we want to read them, not be blocked by them.
-RUN /app/venv/bin/pip check || true
+RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
+RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
 
-# Prove the two libraries we forced still import and still expose the entry
-# points this deployment depends on. Cheap, and it catches an ABI break at build
-# time instead of at 3am on lotor.
-RUN ["/app/venv/bin/python", "-c", "import cryptography; from mcp.client.streamable_http import streamablehttp_client; from mautrix.crypto import OlmMachine; print('cryptography', cryptography.__version__, '- mautrix OlmMachine OK - mcp streamablehttp_client OK')"]
+RUN git clone --depth 1 --branch "${HERMES_REF}" \
+        https://github.com/NousResearch/hermes-agent.git /build/hermes
+
+WORKDIR /build/hermes
+# Step 1: dependency closure straight from uv.lock. --frozen uses the lockfile
+# as committed rather than re-resolving.
+RUN /opt/uvenv/bin/uv sync --frozen --no-install-project ${HERMES_EXTRAS}
+# Step 2: the project itself, editable and without touching deps. This is what
+# creates .venv/bin/hermes without going near the blocked wheel path.
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps -e "."
+
+# crunchtools addition upstream does not declare.
+# uv-created venvs ship no pip, so add it with uv rather than assuming one.
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /build/hermes/.venv/bin/python pypdf
+
+# Report what actually landed, and fail the build if the pieces Kagetora cannot
+# run without are missing.
+RUN /build/hermes/.venv/bin/python -c "import importlib.metadata as m; \
+    import mcp, mautrix, PIL, cryptography, aiohttp; \
+    print('hermes-agent', m.version('hermes-agent'), '| mcp', m.version('mcp'), \
+          '| mautrix', m.version('mautrix'), '| aiohttp', m.version('aiohttp'), \
+          '| Pillow', m.version('pillow'), '| cryptography', cryptography.__version__)"
+
+WORKDIR /build
+
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
@@ -126,7 +124,8 @@ LABEL org.opencontainers.image.vendor="crunchtools"
 WORKDIR /app
 
 # Bring in the installed hermes-agent venv, signal-cli, and Node.js
-COPY --from=builder /app/venv /app/venv
+# Editable install: the venv points back at the source tree, so BOTH move.
+COPY --from=builder /build/hermes /app/hermes
 COPY --from=builder /build/signal-cli /app/signal-cli
 COPY --from=builder /build/node/bin/node /usr/bin/node
 
@@ -160,7 +159,7 @@ RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True
 
 USER 65532
 
-ENV PATH="/app/venv/bin:/app/signal-cli/bin:${PATH}" \
+ENV PATH="/app/hermes/.venv/bin:/app/signal-cli/bin:${PATH}" \
     HOME=/app \
     HERMES_CONFIG_DIR=/app/.hermes \
     PYTHONUNBUFFERED=1

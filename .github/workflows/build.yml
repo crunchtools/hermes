@@ -58,6 +58,17 @@ jobs:
       - name: Save image for Trivy scan and SBOM
         run: podman save -o /tmp/hermes.tar localhost/hermes:latest
 
+      # Full-severity inventory, report-only. This is the artifact humans read
+      # when deciding what to accept; the gate below is what blocks the build.
+      - name: Trivy full CVE report (all severities, non-blocking)
+        uses: aquasecurity/trivy-action@master
+        with:
+          input: /tmp/hermes.tar
+          format: "table"
+          exit-code: "0"
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          scanners: "vuln"
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
