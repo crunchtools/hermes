@@ -28,61 +28,77 @@ USER 0
 
 WORKDIR /build
 
-# hermes-agent is published on PyPI; install into an isolated venv we can
-# copy into the runtime image. Pinned for reproducible builds.
+# Install hermes-agent from PyPI, using UPSTREAM'S OWN EXTRAS.
 #
-# IMPORTANT: the [mcp] extra pulls mcp>=1.26 which provides
-# mcp.client.streamable_http — required for Hermes to consume the streamable-http
-# MCP servers running on lotor (mcp-slack, mcp-mediawiki, mcp-airlock, etc.).
-# Without this extra, `hermes mcp add` saves configs but shows "✗ disabled" and
-# never connects, regardless of server availability.
+# Why not build from upstream's git tag (v0.21.0)? Because they block it:
+#   RuntimeError: Building wheels or sdists for hermes-agent is not supported.
+#   Hermes is distributed via the shell installer, Docker image, or Nix.
+# Their own Dockerfile works around this with `uv sync --no-install-project`
+# plus running from the source tree -- but that image is 465 lines on
+# debian:13.4 with npm builds for the web/TUI assets, a patched SQLite for
+# FTS5, and Playwright. Reproducing it on Hummingbird is a project, not a
+# build tweak, and adopting their Debian image outright would break the base
+# image rule in the Autonomous Agent profile (Section III).
+#
+# So PyPI it is -- 0.19.0 is the newest wheel they publish (PyPI has been
+# stale since 2026-07-20; 0.19.1 and all of 0.20.x/0.21.0 are git-only).
+#
+# The important change is HOW we install. This used to hand-list the packages
+# that upstream's [matrix] extra already declares, and drifted on exactly one
+# pin -- aiohttp unpinned resolved to 3.14.3 where 0.19.0 demands 3.14.1 --
+# which broke Matrix in production. Naming the extras instead makes that class
+# of drift impossible: upstream's pins win, every time.
+#
+# Extras chosen for the Kagetora personal-assistant deployment:
+#   mcp     Trentina gateway -- every tool the agent has
+#   matrix  primary chat interface
+#   vision  image recognition (zero deps; core Pillow does the work)
+#   cron    scheduled jobs (zero deps)
+#   pty     terminal support (zero deps)
+#   web     gateway HTTP surface
+#   youtube transcript extraction -- one dep, useful for a PA
+#
+# Deliberately NOT installed: google (reached via Trentina's gw-* backends),
+# messaging (discord.py/telegram/slack -- Matrix is the interface, and a lazy
+# discord install once blocked startup for minutes), voice/wake/tts (no audio
+# device in a container), every LLM provider extra (the LLM is a custom
+# OpenAI-compatible endpoint behind Trentina; openai is core), search and
+# memory backends (Trentina again), and computer-use (headless).
 ARG HERMES_VERSION=0.19.0
 RUN microdnf install -y gcc-c++ make python3.13-devel && microdnf clean all
 RUN python3.13 -m venv /app/venv && \
     /app/venv/bin/pip install --no-cache-dir cmake && \
-    /app/venv/bin/pip install --no-cache-dir "hermes-agent[mcp]==${HERMES_VERSION}" aiohttp \
-        "mautrix[encryption]==0.21.0" Markdown "aiosqlite==0.22.1" "asyncpg==0.31.0" "aiohttp-socks==0.11.0" \
+    /app/venv/bin/pip install --no-cache-dir \
+        "hermes-agent[mcp,matrix,vision,cron,pty,web,youtube]==${HERMES_VERSION}" \
         pypdf && \
-    /app/venv/bin/pip install --no-cache-dir --upgrade \
-        "Pillow>=12.3.0" "cryptography>=50.0.0" "setuptools>=78.1.1" "msgpack>=1.2.1"
+    /app/venv/bin/pip install --no-cache-dir --upgrade "Pillow>=12.3.0" "cryptography>=50.0.0"
 
-# CVE remediation for the 0.19.0 dependency tree.
+# Pillow is the ONE override kept, and only because network isolation does not
+# cover it. Trentina is a network boundary, not a content filter: Matrix
+# delivers internet-originated images straight into a vision-enabled agent, and
+# Pillow parses them. CVE-2026-59197 and CVE-2026-59205 are native heap
+# out-of-bounds write and controlled heap corruption respectively -- reachable
+# by anyone who can send Kagetora a picture. 0.19.0 pins Pillow==12.2.0; 12.3.0
+# is what upstream themselves moved to in 0.21.0, so this tracks their fix
+# rather than inventing one.
 #
-# hermes-agent 0.19.0 hard-pins its dependencies with `==` (cryptography==46.0.7,
-# Pillow==12.2.0, mcp==1.26.0, starlette==1.0.1). Several of those pinned
-# versions ship known HIGH CVEs, so satisfying the Trivy gate means deliberately
-# overriding upstream's pins. That is a considered trade, not an oversight:
-#
-#   pillow        12.2.0 -> >=12.3.0  (10 CVEs; native heap OOB write + heap
-#                                      corruption, and Pillow parses untrusted
-#                                      image input)
-#   cryptography  46.0.7 -> >=50.0.0  (CVE-2026-69247, CVE-2026-69249)
-#   mcp           1.26.0 -> HELD. See .trivyignore -- forcing it resolves to
-#                                      mcp 2.1.1 (the MCP 2.x SDK) and breaks
-#                                      the streamable-http client API that
-#                                      hermes-agent 0.19.0 is written against.
-#   setuptools    70.3.0 -> >=78.1.1  (CVE-2025-47273)
-#   msgpack        1.1.2 -> >=1.2.1    (GHSA-6v7p-g79w-8964, OOB read on
-#                                      Unpacker reuse; transitive, unpinned by
-#                                      hermes-agent, so no conflict introduced)
-#
-# RISK: cryptography backs mautrix E2EE (Matrix). mcp backs the streamable-http
-# transport to Trentina and is deliberately NOT forced -- a build-time smoke
-# test proved forcing it breaks that transport outright.
-# `pip check` runs below and prints the resulting conflicts
-# rather than failing, so the mismatch against upstream's pins is visible in the
-# build log. Runtime verification against a copy of the real data directory is
-# the actual gate before this reaches production.
+# Every other CVE override was dropped. The mcp, Starlette and PyJWT findings
+# are server-side or auth-side: they require reaching this container's socket,
+# and nothing can -- internal=true network, nothing published to the host, two
+# containers on it. Those are accepted in .trivyignore with that reasoning.
 
-# Surface the dependency-resolution damage from overriding those pins. Non-fatal
-# on purpose: we expect hermes-agent to declare conflicts against the versions
-# we forced, and we want to read them, not be blocked by them.
+# Fail the build if the pieces Kagetora cannot live without are missing, and
+# print resolved versions so a dependency surprise is visible in the log.
+# Does NOT assert a specific mcp client symbol: that import moved between
+# mcp 1.x and 2.x, and pinning the assertion to one spelling is how this test
+# would rot the next time we move versions.
+RUN /app/venv/bin/python -c "import importlib.metadata as m; \
+    import mcp, mautrix, PIL, cryptography, aiohttp; \
+    print('hermes-agent', m.version('hermes-agent'), '| mcp', m.version('mcp'), \
+          '| mautrix', m.version('mautrix'), '| aiohttp', m.version('aiohttp'), \
+          '| Pillow', m.version('pillow'), '| cryptography', cryptography.__version__)"
 RUN /app/venv/bin/pip check || true
 
-# Prove the two libraries we forced still import and still expose the entry
-# points this deployment depends on. Cheap, and it catches an ABI break at build
-# time instead of at 3am on lotor.
-RUN ["/app/venv/bin/python", "-c", "import cryptography; from mcp.client.streamable_http import streamablehttp_client; from mautrix.crypto import OlmMachine; print('cryptography', cryptography.__version__, '- mautrix OlmMachine OK - mcp streamablehttp_client OK')"]
 
 # signal-cli native binary (GraalVM, no JVM at runtime). Matches the
 # pattern crunchtools/openclaw uses for the same purpose.
