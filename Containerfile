@@ -57,9 +57,9 @@ RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
 RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
 
 RUN git clone --depth 1 --branch "${HERMES_REF}" \
-        https://github.com/NousResearch/hermes-agent.git /build/hermes
+        https://github.com/NousResearch/hermes-agent.git /app/hermes
 
-WORKDIR /build/hermes
+WORKDIR /app/hermes
 # Step 1: dependency closure straight from uv.lock. --frozen uses the lockfile
 # as committed rather than re-resolving.
 RUN /opt/uvenv/bin/uv sync --frozen --no-install-project ${HERMES_EXTRAS}
@@ -69,11 +69,17 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps -e "."
 
 # crunchtools addition upstream does not declare.
 # uv-created venvs ship no pip, so add it with uv rather than assuming one.
-RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /build/hermes/.venv/bin/python pypdf
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /app/hermes/.venv/bin/python pypdf
 
 # Report what actually landed, and fail the build if the pieces Kagetora cannot
 # run without are missing.
-RUN /build/hermes/.venv/bin/python -c "import importlib.metadata as m; \
+# Run the real entry point, not just an import. The previous deploy failed with
+# "exec /app/hermes/.venv/bin/hermes: No such file or directory" because the
+# venv had been built at a different path -- an import-only test cannot see
+# that, because it never invokes the console script.
+RUN /app/hermes/.venv/bin/hermes --version
+
+RUN /app/hermes/.venv/bin/python -c "import importlib.metadata as m; \
     import mcp, mautrix, PIL, cryptography, aiohttp; \
     print('hermes-agent', m.version('hermes-agent'), '| mcp', m.version('mcp'), \
           '| mautrix', m.version('mautrix'), '| aiohttp', m.version('aiohttp'), \
@@ -125,7 +131,7 @@ WORKDIR /app
 
 # Bring in the installed hermes-agent venv, signal-cli, and Node.js
 # Editable install: the venv points back at the source tree, so BOTH move.
-COPY --from=builder /build/hermes /app/hermes
+COPY --from=builder /app/hermes /app/hermes
 COPY --from=builder /build/signal-cli /app/signal-cli
 COPY --from=builder /build/node/bin/node /usr/bin/node
 
