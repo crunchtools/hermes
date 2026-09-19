@@ -5,7 +5,7 @@ Hermes Agent (Nous Research) containerized for the crunchtools fleet under the
 
 Sister project to `crunchtools/openclaw`. Runs alongside OpenClaw on lotor.
 Owns the weekly orchestration of the crunchtools GHA cascade plus a set of ops
-watchers (DB backup verification, Quay image freshness, Zabbix issue summary,
+watchers (DB backup verification, Quay image freshness, Nagios issue summary,
 periodic environment reports). Messaging via Signal.
 
 **Status: Phase 1 (MVP container) — build is unverified at first commit.**
@@ -16,7 +16,7 @@ periodic environment reports). Messaging via Signal.
 |---|---|---|
 | 1 | Containerfile + GHA build (Buildah → Trivy → SBOM → Quay + GHCR) | this repo |
 | 2 | Trust boundary (P-Agent/Q-Agent), circuit breakers, audit logging | next |
-| 3 | Configured ops timers (GHA pulse, backups, Quay, Zabbix, reports) | next |
+| 3 | Configured ops timers (GHA pulse, backups, Quay, Nagios, reports) | next |
 | 4 | Per-repo constitution at `.specify/memory/constitution.md`, cosign signing, production gates | next |
 
 ## Build
