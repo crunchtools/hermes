@@ -19,7 +19,7 @@
 # Stage 1: Install hermes-agent and signal-cli into staging dirs.
 # The Hummingbird builder image has bash, coreutils, microdnf and gcc — we
 # borrow bash + coreutils into the runtime stage further down.
-FROM quay.io/hummingbird/python:3.13-builder AS builder
+FROM quay.io/hummingbird/python:3.14-builder AS builder
 
 # Hummingbird's distroless builder defaults to a non-root user that can't
 # write to /app — switch to root for the build stage (it's discarded anyway).
@@ -131,7 +131,7 @@ RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-lin
 # Hummingbird builder stage (same glibc family, libs guaranteed compatible) and
 # symlink the standard command names. Adds ~3MB to the runtime; preserves the
 # distroless-Hummingbird posture for the rest of the image.
-FROM quay.io/hummingbird/python:3.13
+FROM quay.io/hummingbird/python:3.14
 
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
 LABEL description="Hermes Agent autonomous AI agent — crunchtools deployment under the Autonomous Agent constitution profile (Signal messaging, weekly orchestration of crunchtools GHA cascade, ops watchers)."
