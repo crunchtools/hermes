@@ -20,3 +20,23 @@
 GHSA-6v7p-g79w-8964
 CVE-2025-47273
 CVE-2026-59890
+
+# anyio / httpcore2 / httpx2 — pinned by the `mcp` PyPI package's own extras
+# metadata (mcp[...]'s dependency spec), not by hermes-agent or by anything
+# in this Containerfile. Checked upstream's three newer tags (v2026.9.7,
+# v2026.9.11, v2026.9.14 — this image tracks v2026.8.31) directly against
+# their uv.lock: all three still pin anyio==4.12.1, httpcore2==2.7.0,
+# httpx2==2.7.0. No version of hermes-agent exists yet that resolves clean;
+# this is blocked on the `mcp` package itself, upstream of upstream.
+#
+# Not reachable: same isolation as the entries above, more so per Scott
+# (2026-09-20) — Kagetora sits behind Trentina and is not directly
+# internet-reachable at all; an attacker would need the host or Trentina
+# itself compromised first, at which point these three CVEs are moot.
+#
+#   CRITICAL  CVE-2026-63374  anyio 4.12.1       TLS cert spoofing via IDNA host encoding
+#   HIGH      CVE-2026-84381  httpcore2 2.7.0    WebSocket traffic sent in plaintext via SOCKS5
+#   HIGH      CVE-2026-84382  httpx2 2.7.0       DoS via streaming response decompression
+CVE-2026-63374
+CVE-2026-84381
+CVE-2026-84382
