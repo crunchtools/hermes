@@ -10,6 +10,17 @@ name: Build and Push Hermes
 # Profile alignment (autonomous-agent §III): vulnerability scan (Trivy),
 # SBOM generation, dual registry push (Quay + GHCR). cosign signing is
 # deferred to Phase 4 — production-gate work.
+#
+# Constitution Section III (RT #1480): the two registry pushes are now two
+# separate jobs rather than four steps in one, so Quay still publishes when
+# GHCR has permission trouble, and the build moved off
+# redhat-actions/buildah-build to docker/build-push-action because buildah has
+# no equivalent of cache-from/cache-to type=gha.
+#
+# Deviation worth knowing about: Section III describes the Trivy gate as
+# continue-on-error. This repo has always run it blocking (exit-code 1) with a
+# .trivyignore, and that is left alone — turning a security gate advisory is
+# not a side effect a CI cleanup should have.
 
 on:
   push:
@@ -29,12 +40,14 @@ env:
   GHCR_IMAGE: ghcr.io/crunchtools/hermes
 
 jobs:
-  build-and-push:
+  build-and-push-quay:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha_short: ${{ steps.version.outputs.sha_short }}
 
     steps:
       - name: Checkout
@@ -47,41 +60,45 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Build image with Buildah
-        id: build
-        uses: redhat-actions/buildah-build@v2
-        with:
-          image: hermes
-          tags: latest ${{ steps.version.outputs.tag }} ${{ steps.version.outputs.sha_short }}
-          containerfiles: ./Containerfile
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Save image for Trivy scan and SBOM
-        run: podman save -o /tmp/hermes.tar localhost/hermes:latest
+      # load: true puts the image in the local daemon so the scans below can
+      # read it directly. This replaces the podman save to /tmp/hermes.tar.
+      - name: Build image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          load: true
+          tags: hermes:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # Full-severity inventory, report-only. This is the artifact humans read
       # when deciding what to accept; the gate below is what blocks the build.
       - name: Trivy full CVE report (all severities, non-blocking)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          input: /tmp/hermes.tar
+          image-ref: hermes:scan
           format: "table"
           exit-code: "0"
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
           scanners: "vuln"
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          input: /tmp/hermes.tar
+          image-ref: hermes:scan
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
           trivyignores: ".trivyignore"
 
       - name: Generate SBOM (Trivy / SPDX-JSON)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          input: /tmp/hermes.tar
+          image-ref: hermes:scan
           format: "spdx-json"
           output: "hermes-sbom.spdx.json"
           exit-code: "0"
@@ -101,26 +118,59 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
 
-      - name: Push to Quay.io
-        if: github.event_name != 'pull_request'
-        run: |
-          podman tag localhost/hermes:latest ${{ env.QUAY_IMAGE }}:latest
-          podman tag localhost/hermes:latest ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.tag }}
-          podman push ${{ env.QUAY_IMAGE }}:latest
-          podman push ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.tag }}
+      # Cache hit, not a rebuild -- this is what cache-to: mode=max above buys.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.QUAY_IMAGE }}:latest
+            ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=Hermes Agent containerized for the crunchtools fleet
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-and-push-ghcr:
+    runs-on: ubuntu-latest
+    needs: build-and-push-quay
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ github.token }}
 
-      - name: Push to GHCR
-        if: github.event_name != 'pull_request'
-        run: |
-          podman tag localhost/hermes:latest ${{ env.GHCR_IMAGE }}:latest
-          podman tag localhost/hermes:latest ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
-          podman push ${{ env.GHCR_IMAGE }}:latest
-          podman push ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          push: true
+          tags: |
+            ${{ env.GHCR_IMAGE }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ needs.build-and-push-quay.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=Hermes Agent containerized for the crunchtools fleet
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
