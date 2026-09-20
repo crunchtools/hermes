@@ -3,7 +3,7 @@
 Hermes Agent (Nous Research) containerized for the crunchtools fleet under the
 [Autonomous Agent constitution profile](https://github.com/crunchtools/constitution/blob/main/profiles/autonomous-agent.md).
 
-Sister project to `crunchtools/openclaw`. Runs alongside OpenClaw on lotor.
+Sister project to `crunchtools/openclaw`. Runs alongside OpenClaw.
 Owns the weekly orchestration of the crunchtools GHA cascade plus a set of ops
 watchers (DB backup verification, Quay image freshness, Nagios issue summary,
 periodic environment reports). Messaging via Signal.
@@ -25,17 +25,17 @@ periodic environment reports). Messaging via Signal.
 podman build -t quay.io/crunchtools/hermes .
 ```
 
-## Run (mirrors openclaw layout on lotor)
+## Run (mirrors the openclaw layout)
 
 ```bash
 podman run -d --name hermes.crunchtools.com \
   --rm --read-only --tmpfs /tmp:rw,nosuid \
   --network crunchtools \
   -p 127.0.0.1:18790:18790 \
-  -v /srv/hermes.crunchtools.com/data/hermes:/app/.hermes:Z \
-  -v /srv/hermes.crunchtools.com/data/signal:/app/.local/share/signal-cli:Z \
-  -v /srv/hermes.crunchtools.com/logs:/app/logs:Z \
-  --env-file /srv/hermes.crunchtools.com/config/env \
+  -v /srv/<service>/data/hermes:/app/.hermes:Z \
+  -v /srv/<service>/data/signal:/app/.local/share/signal-cli:Z \
+  -v /srv/<service>/logs:/app/logs:Z \
+  --env-file /srv/<service>/config/env \
   quay.io/crunchtools/hermes
 ```
 
