@@ -1,5 +1,7 @@
 # Hermes 0.21.0, built exactly as upstream prescribes: their git tag, their
-# uv.lock, no overrides. Hermes's own dependency tree scans CLEAN.
+# uv.lock, no overrides. Every finding below comes from pip's own vendored
+# bundle or from the mcp package's own pin -- not from Hermes's dependency
+# tree, which resolves clean on its own.
 #
 # Every remaining finding lives inside pip's vendored bundle
 # (site-packages/pip/_vendor/), not in a package Hermes imports. Confirmed by
