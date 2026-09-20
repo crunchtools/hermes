@@ -1,7 +1,8 @@
 name: Build and Push Hermes
 
 # Triggers (deliberately NO `schedule:`):
-#   push   — Containerfile / workflow / config changes
+#   push   — Containerfile / workflow / config changes, or a vX.Y.Z tag
+#            (constitution II: tags trigger release workflows)
 #   workflow_dispatch — manual rebuild
 #   repository_dispatch parent-image-updated — fired by Hermes itself when it
 #     pulses its own root (Hermes orchestrates a weekly pulse to every root
@@ -25,6 +26,7 @@ name: Build and Push Hermes
 on:
   push:
     branches: [main]
+    tags: ['v*']
     paths:
       - 'Containerfile'
       - '.trivyignore'
