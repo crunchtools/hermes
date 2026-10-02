@@ -43,7 +43,7 @@ WORKDIR /build
 # No version overrides, no forced upgrades, no dependency pinning of our own.
 # uv.lock decides everything; whatever CVEs that implies are reported, not
 # fought. That is the point of building it their way.
-ARG HERMES_REF=v2026.8.31
+ARG HERMES_REF=v2026.9.24
 
 # Extras for the Kagetora personal-assistant deployment. vision, cron and pty
 # carry zero dependencies -- image recognition is a feature flag over core
