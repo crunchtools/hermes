@@ -68,7 +68,7 @@ jobs:
       # load: true puts the image in the local daemon so the scans below can
       # read it directly. This replaces the podman save to /tmp/hermes.tar.
       - name: Build image for scanning
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Containerfile
@@ -122,7 +122,7 @@ jobs:
 
       # Cache hit, not a rebuild -- this is what cache-to: mode=max above buys.
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Containerfile
@@ -162,7 +162,7 @@ jobs:
           password: ${{ github.token }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Containerfile
