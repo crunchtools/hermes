@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Base image back to Hummingbird Python 3.13: hermes-agent requires
+  Python <3.14, so the 3.14 bump (#14) broke the image build. Dependabot now
+  skips Python 3.14+ until upstream supports it.
+
 ### Changed
 
 - Added a v1.18.0 manifest constitution at `.specify/memory/constitution.md`.
