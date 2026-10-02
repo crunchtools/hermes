@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [1.0.2] - 2026-10-01
 
+### Security
+
+- Added `.trivyignore` entries for six PyJWT 2.13.0 findings (CVE-2026-102266,
+  -102267, -102268 CRITICAL, -102271, -102272, -102273) and two urllib3 2.7.0
+  findings (CVE-2026-97687, -97689). They were disclosed after 1.0.1 was
+  built and are not introduced by this bump: upstream's `uv.lock` pins the
+  same two versions at v2026.8.31, v2026.9.24 and on main, so the 1.0.1 image
+  carries them too. No upstream release fixes them yet
+  (NousResearch/hermes-agent#128979 is open). Accepted by Scott (2026-10-01)
+  as unchanged exposure behind Trentina; remove when upstream's lockfile moves.
+
 ### Changed
 
 - Bumped upstream Hermes Agent from v0.21.0 (`v2026.8.31`) to v0.21.5

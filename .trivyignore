@@ -1,4 +1,4 @@
-# Hermes 0.21.0, built exactly as upstream prescribes: their git tag, their
+# Hermes 0.21.5, built exactly as upstream prescribes: their git tag, their
 # uv.lock, no overrides. Every finding below comes from pip's own vendored
 # bundle or from the mcp package's own pin -- not from Hermes's dependency
 # tree, which resolves clean on its own.
@@ -25,10 +25,10 @@ CVE-2026-59890
 
 # anyio / httpcore2 / httpx2 — pinned by the `mcp` PyPI package's own extras
 # metadata (mcp[...]'s dependency spec), not by hermes-agent or by anything
-# in this Containerfile. Checked upstream's three newer tags (v2026.9.7,
-# v2026.9.11, v2026.9.14 — this image tracks v2026.8.31) directly against
-# their uv.lock: all three still pin anyio==4.12.1, httpcore2==2.7.0,
-# httpx2==2.7.0. No version of hermes-agent exists yet that resolves clean;
+# in this Containerfile. Checked upstream's uv.lock at every tag from
+# v2026.8.31 through v2026.9.24 (the one this image tracks): all still pin
+# anyio==4.12.1, httpcore2==2.7.0, httpx2==2.7.0. No version of hermes-agent
+# exists yet that resolves clean;
 # this is blocked on the `mcp` package itself, upstream of upstream.
 #
 # Not reachable: same isolation as the entries above, more so per Scott
@@ -42,3 +42,38 @@ CVE-2026-59890
 CVE-2026-63374
 CVE-2026-84381
 CVE-2026-84382
+
+# PyJWT / urllib3 -- disclosed after the 1.0.1 build, so they first blocked
+# the gate on the bump to v2026.9.24. The bump does not introduce them:
+# upstream's uv.lock pins PyJWT==2.13.0 and urllib3==2.7.0 at v2026.8.31, at
+# v2026.9.24 and on main, and the image already in production carried both.
+# Staying on the old tag would not have removed one of these findings; any
+# rebuild of it fails the same gate.
+#
+# No upstream release fixes them yet. NousResearch/hermes-agent#128979 (bump
+# PyJWT to 2.14.0) is open. Per this file's rule, the lockfile is not
+# overridden here.
+#
+# Accepted by Scott (2026-10-01) on the same isolation as the entries above:
+# no direct egress, every outbound call through the Trentina gateway. Where
+# Hermes verifies a JWT, and whether any path uses an HTTPS proxy through
+# urllib3, was not traced -- this is an acceptance of unchanged exposure, not
+# a finding that the code is unreachable. Remove each entry when upstream's
+# lockfile moves to PyJWT>=2.14.0 / urllib3>=2.8.0.
+#
+#   CRITICAL  CVE-2026-102268  PyJWT 2.13.0    (see advisory)
+#   HIGH      CVE-2026-102266  PyJWT 2.13.0    auth bypass via empty HMAC key acceptance
+#   HIGH      CVE-2026-102267  PyJWT 2.13.0    key substitution via unvalidated JWKS redirects
+#   HIGH      CVE-2026-102271  PyJWT 2.13.0    auth bypass via DER public keys accepted as HMAC
+#   HIGH      CVE-2026-102272  PyJWT 2.13.0    token forgery via Unicode byte-order mark handling
+#   HIGH      CVE-2026-102273  PyJWT 2.13.0    token forgery via public JWK containers accepted as HMAC
+#   HIGH      CVE-2026-97687   urllib3 2.7.0   traffic interception via HTTPS proxy TLS config override
+#   HIGH      CVE-2026-97689   urllib3 2.7.0   DoS via unbounded allocation in chunk parser
+CVE-2026-102268
+CVE-2026-102266
+CVE-2026-102267
+CVE-2026-102271
+CVE-2026-102272
+CVE-2026-102273
+CVE-2026-97687
+CVE-2026-97689
