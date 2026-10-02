@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Added a v1.18.0 manifest constitution at `.specify/memory/constitution.md`.
+- Constitution validation is pinned to the inherited release via
+  `.github/workflows/constitution.yml`.
+- Dependabot auto-merges GitHub Actions minor and patch updates.
+
 ## [1.0.2] - 2026-10-01
 
 ### Security
