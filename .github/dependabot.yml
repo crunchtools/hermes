@@ -11,6 +11,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # hermes-agent requires Python <3.14 (project.requires-python); the
+      # 3.14 base broke the build on 2026-10-02. Lift when upstream allows it.
+      - dependency-name: "hummingbird/python"
+        versions: [">=3.14"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
