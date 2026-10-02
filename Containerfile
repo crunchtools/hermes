@@ -53,7 +53,7 @@ ARG HERMES_REF=v2026.8.31
 # Trentina), search/memory backends (Trentina), computer-use (headless).
 ARG HERMES_EXTRAS="--extra mcp --extra matrix --extra vision --extra cron --extra pty --extra web --extra youtube"
 
-RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
+RUN microdnf install -y gcc-c++ make python3.14-devel git && microdnf clean all
 # Pin uv to the image's own interpreter. Left to itself uv downloads a managed
 # CPython into /tmp/.local/share/uv/python/ and builds the venv against that --
 # which is both the wrong version (it picked 3.11, the floor in pyproject) and
@@ -67,7 +67,7 @@ RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON_PREFERENCE=only-system
 
-RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
+RUN python3.14 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
 
 RUN git clone --depth 1 --branch "${HERMES_REF}" \
         https://github.com/NousResearch/hermes-agent.git /app/hermes
@@ -75,7 +75,7 @@ RUN git clone --depth 1 --branch "${HERMES_REF}" \
 WORKDIR /app/hermes
 # Step 1: dependency closure straight from uv.lock. --frozen uses the lockfile
 # as committed rather than re-resolving.
-RUN /opt/uvenv/bin/uv sync --frozen --no-install-project --python /usr/sbin/python3.13 ${HERMES_EXTRAS}
+RUN /opt/uvenv/bin/uv sync --frozen --no-install-project --python /usr/sbin/python3.14 ${HERMES_EXTRAS}
 # Step 2: the project itself, editable and without touching deps. This is what
 # creates .venv/bin/hermes without going near the blocked wheel path.
 RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
@@ -108,8 +108,8 @@ ARG SIGNAL_CLI_VERSION=0.14.5
 RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-native.tar.gz" \
         -o /tmp/signal-cli.tar.gz && \
     mkdir -p /build/signal-cli/bin && \
-    python3.13 -c "import tarfile; tarfile.open('/tmp/signal-cli.tar.gz').extractall('/build/signal-cli/bin', filter='data')" && \
-    python3.13 -c "import os; os.chmod('/build/signal-cli/bin/signal-cli', 0o755); os.remove('/tmp/signal-cli.tar.gz')"
+    python3.14 -c "import tarfile; tarfile.open('/tmp/signal-cli.tar.gz').extractall('/build/signal-cli/bin', filter='data')" && \
+    python3.14 -c "import os; os.chmod('/build/signal-cli/bin/signal-cli', 0o755); os.remove('/tmp/signal-cli.tar.gz')"
 
 # Node.js 22 LTS — Hermes's install.sh bootstrap checks for this on every start
 # and tries to install it at runtime if missing (fails on read-only rootfs).
@@ -118,10 +118,10 @@ ARG NODE_VERSION=22.16.0
 RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
         -o /tmp/node.tar.gz && \
     mkdir -p /build/node && \
-    python3.13 -c "import tarfile; t=tarfile.open('/tmp/node.tar.gz'); members=[m for m in t.getmembers()]; prefix=members[0].name.split('/')[0]+'/'; [setattr(m,'name',m.name[len(prefix):]) for m in members if m.name.startswith(prefix)]; t.extractall('/build/node',members=[m for m in members if m.name],filter='data')" && \
+    python3.14 -c "import tarfile; t=tarfile.open('/tmp/node.tar.gz'); members=[m for m in t.getmembers()]; prefix=members[0].name.split('/')[0]+'/'; [setattr(m,'name',m.name[len(prefix):]) for m in members if m.name.startswith(prefix)]; t.extractall('/build/node',members=[m for m in members if m.name],filter='data')" && \
     rm /tmp/node.tar.gz
 
-# Stage 2: Minimal runtime — Hummingbird distroless python:3.13 plus a small
+# Stage 2: Minimal runtime — Hummingbird distroless python:3.14 plus a small
 # shell layer (bash + coreutils) carried over from the builder.
 #
 # Why: the pure distroless runtime has no /bin/sh, so any hermes-agent path that
@@ -151,7 +151,7 @@ COPY --from=builder /build/node/bin/node /usr/bin/node
 
 # signal-cli's GraalVM native binary extracts a JNI bridge to /tmp at startup
 # (libsignal_jni_amd64.so) and dlopen()s it — that .so depends on libstdc++.so.6
-# which the distroless Hummingbird python:3.13 runtime doesn't carry (pure Python
+# which the distroless Hummingbird python:3.14 runtime doesn't carry (pure Python
 # doesn't need C++ runtime). Copy libstdc++ from the builder stage. Same pattern
 # as crunchtools/mcp-airlock.
 COPY --from=builder /usr/lib64/libstdc++.so.6* /usr/lib64/
@@ -171,10 +171,10 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 # part of coreutils, but the coreutils symlinks don't exist until this RUN
 # finishes. Python's os.symlink hits the libc syscall directly — no shell, no ln.
 #
-# USER 0 first because the Hummingbird python:3.13 base defaults to UID 65532
+# USER 0 first because the Hummingbird python:3.14 base defaults to UID 65532
 # which can't write into /bin or /usr/bin. Switch back to that default after.
 USER 0
-RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
+RUN ["/usr/sbin/python3.14", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
 
 
 # Prove the shipped venv actually executes in THIS image. The builder-stage
