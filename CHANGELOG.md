@@ -6,6 +6,37 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-01
+
+### Security
+
+- Added `.trivyignore` entries for six PyJWT 2.13.0 findings (CVE-2026-102266,
+  -102267, -102268 CRITICAL, -102271, -102272, -102273) and two urllib3 2.7.0
+  findings (CVE-2026-97687, -97689). They were disclosed after 1.0.1 was
+  built and are not introduced by this bump: upstream's `uv.lock` pins the
+  same two versions at v2026.8.31, v2026.9.24 and on main, so the 1.0.1 image
+  carries them too. No upstream release fixes them yet
+  (NousResearch/hermes-agent#128979 is open). Accepted by Scott (2026-10-01)
+  as unchanged exposure behind Trentina; remove when upstream's lockfile moves.
+
+### Changed
+
+- Bumped upstream Hermes Agent from v0.21.0 (`v2026.8.31`) to v0.21.5
+  (`v2026.9.24`). Only `HERMES_REF` changes; the build method and the extras
+  are the same, and upstream's `uv.lock` still decides every dependency.
+
+### Fixed
+
+- Matrix sync no longer stops for good on a transient failure. v0.21.0
+  classified a sync error as a permanent auth failure when its message
+  contained "401" or "403" anywhere, and a timeout message includes the
+  request URL with its numeric `since` token, so an ordinary timeout could
+  match and end the sync loop until the next restart. Upstream classifies on
+  the structured Matrix error code since v0.21.4.
+- Picks up upstream's v0.21.2 session-store fixes: second writers cancelling
+  each other's locks, healthy WAL databases reported as corrupt, and
+  full-text-index damage failing the whole conversation.
+
 ## [1.0.1] - 2026-09-20
 
 ### Security
