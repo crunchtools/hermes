@@ -21,3 +21,5 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      - dependency-name: "crunchtools/constitution*"
