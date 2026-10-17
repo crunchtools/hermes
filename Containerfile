@@ -49,9 +49,12 @@ ARG HERMES_REF=v2026.9.24
 # carry zero dependencies -- image recognition is a feature flag over core
 # Pillow. Left out: google (reached via Trentina's gw-* backends), messaging
 # (discord/telegram/slack -- Matrix is the interface), voice/wake/tts (no audio
-# device), the LLM provider extras (custom OpenAI-compatible endpoint behind
-# Trentina), search/memory backends (Trentina), computer-use (headless).
-ARG HERMES_EXTRAS="--extra mcp --extra matrix --extra vision --extra cron --extra pty --extra web --extra youtube"
+# device), the other LLM provider extras (OpenRouter is a custom
+# OpenAI-compatible endpoint behind Trentina), search/memory backends
+# (Trentina), computer-use (headless). anthropic is in: Kagetora runs Claude on
+# the anthropic_messages wire through Trentina's /llm/anthropic, and Hermes
+# needs the SDK for that route.
+ARG HERMES_EXTRAS="--extra mcp --extra matrix --extra vision --extra cron --extra pty --extra web --extra youtube --extra anthropic"
 
 RUN microdnf install -y gcc-c++ make python3.13-devel git && microdnf clean all
 # Pin uv to the image's own interpreter. Left to itself uv downloads a managed

@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- The `anthropic` extra (upstream's pin, `anthropic==0.87.0`). Kagetora moves
+  to Claude on the `anthropic_messages` wire through Trentina's
+  `/llm/anthropic`, and without the SDK Hermes refuses the request instead of
+  falling back.
+
 ### Fixed
 - Base image back to Hummingbird Python 3.13: hermes-agent requires
   Python <3.14, so the 3.14 bump (#14) broke the image build. Dependabot now

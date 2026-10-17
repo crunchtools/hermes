@@ -1,6 +1,6 @@
 # hermes Constitution
 
-> **Version:** 1.0.0
+> **Version:** 1.1.0
 > **Ratified:** 2026-10-02
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.24.0
@@ -34,7 +34,9 @@ Single agent behind the MCP gateway; no P-Agent/Q-Agent split yet (Phase 2).
 Tools come only through the MCP gateway (the `mcp` extra). Search, memory,
 Google services and the LLM provider are reached through it rather than
 through Hermes's own provider and backend extras, which are left out of the
-image.
+image. The one provider extra in the image is `anthropic`: it is the wire
+client for Trentina's `/llm/anthropic` route, not a way around the gateway.
+Every model call still goes to Trentina, which holds the provider key.
 
 ## Layer 3 — Container & Supply Chain Security
 
@@ -45,10 +47,11 @@ image.
   Upstream stopped publishing to PyPI after 0.19.0 and blocks wheel and sdist
   builds. Upstream's `uv.lock` decides every dependency: no overrides, no
   forced upgrades. The one addition is `pypdf`.
-- **Extras:** `mcp`, `matrix`, `vision`, `cron`, `pty`, `web`, `youtube`. Left
+- **Extras:** `mcp`, `matrix`, `vision`, `cron`, `pty`, `web`, `youtube`,
+  `anthropic` (the SDK for the `anthropic_messages` wire to Trentina). Left
   out: Google, Discord/Telegram/Slack messaging, voice/wake/TTS (no audio
-  device), the LLM-provider and search/memory backends (reached through the
-  gateway) and computer-use (headless).
+  device), the other LLM-provider and the search/memory backends (reached
+  through the gateway) and computer-use (headless).
 - **Builder:** `quay.io/hummingbird/python:3.13-builder`. **Runtime:**
   `quay.io/hummingbird/python:3.13` (distroless), plus:
   - bash and coreutils copied from the builder, with `/bin/sh` and the common
@@ -103,3 +106,4 @@ anomaly checks) are not yet recorded in this repo.
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2026-10-02 | First constitution, written as a v1.18.0 manifest from the README, Containerfile, build workflow and `.trivyignore` |
+| 1.1.0 | 2026-10-17 | `anthropic` extra admitted as the wire client for Trentina's `/llm/anthropic`; every model call still goes through the gateway |
