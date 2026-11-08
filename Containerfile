@@ -120,6 +120,12 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
 # What it buys: CVE-2026-119203, -119204, -119205 (fixed in 6.21.4) and
 # -119206 through -119209 (fixed in 6.21.3). Seven HIGH findings in all.
 #
+# The exemption is TEMPORARY BY CONSTRUCTION and is not a standing opt-out.
+# The window is rolling, so once 6.21.4 is more than fourteen days old -- from
+# about 2026-11-11 -- the flag stops doing anything and the pin resolves on its
+# own. It earns its keep again only at the next bump, and at that bump the same
+# reasoning has to be made again rather than inherited.
+#
 # The comment lives here because it cannot live next to the cutoff: that is a
 # line in a third-party pyproject.toml cloned at build time, and this is the
 # place a reader of THIS repo meets it.

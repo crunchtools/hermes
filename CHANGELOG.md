@@ -24,7 +24,9 @@ All notable changes to this project are documented here. The format follows
   untouched, because moving it would silently re-resolve upstream's whole
   closure. Upstream's own `[tool.uv.exclude-newer-package]` table does the
   same for dozens of packages, on the reasoning that an exact pin gains
-  nothing from a quarantine it cannot float past.
+  nothing from a quarantine it cannot float past. The exemption is temporary
+  by construction: the window is rolling, so from about 2026-11-11 the flag
+  does nothing and the pin resolves on its own.
 
   This does not turn the Trivy gate green. The blocking scan reports 42
   HIGH/CRITICAL findings; the other 35 are upstream's `uv.lock` -- pillow
