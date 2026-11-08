@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify the Containerfile's diverged security pins, inside the built venv.
 
-Two checks, and the second is the one that earns its keep.
+Three checks. The second and third are the ones that earn their keep.
 
 1. Every pin named on the command line is installed at exactly that version.
    ``uv pip install --no-deps`` installs blind, so a skipped or substituted
@@ -19,6 +19,15 @@ Deliberately NOT a whole-closure check. hermes-agent's own metadata pins
 the divergence itself. The pinned packages' forward requirements are the part
 that has to hold.
 
+3. With ``--lazy-deps``: no shipped version violates a pin that upstream's own
+   ``LAZY_DEPS`` table declares for it. That table is not packaging metadata --
+   ``tools.lazy_deps.is_available(feature)`` compares against it at runtime and
+   a platform's registry ``check_fn`` is that call, so a version the table does
+   not expect makes the feature report itself unavailable and its adapter is
+   never created. v1.1.0 shipped aiohttp 3.14.4 against a declared
+   ``aiohttp==3.14.3`` and Kagetora came up with no Matrix channel. Checks 1
+   and 2 both passed that build, which is exactly why this third one exists.
+
 A pin may name its extras, and they are part of the contract: upstream
 installs ``PyJWT[crypto]``, so ``PyJWT[crypto]==2.14.0`` checks the ``crypto``
 extra's floors too. Extras nobody asked for are skipped, because an extra that
@@ -26,7 +35,7 @@ is not installed is not a floor we owe.
 
 Needs ``packaging``, which upstream's own closure pins.
 
-Usage: verify-pins.py NAME[extras]==VERSION [...]
+Usage: verify-pins.py [--lazy-deps] NAME[extras]==VERSION [...]
 """
 
 from __future__ import annotations
@@ -35,9 +44,10 @@ import sys
 from importlib.metadata import PackageNotFoundError, requires, version
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-USAGE = "usage: verify-pins.py NAME[extras]==VERSION [...]"
+USAGE = "usage: verify-pins.py [--lazy-deps] NAME[extras]==VERSION [...]"
 
 
 def installed(name: str) -> str | None:
@@ -93,7 +103,38 @@ def unmet_floors(name: str, extras: frozenset[str]) -> list[str]:
     return problems
 
 
+def lazy_deps_conflicts(pins: dict[str, tuple[str, frozenset[str]]]) -> list[str]:
+    """LAZY_DEPS specs naming a pinned package that the shipped version fails.
+
+    Imports upstream's table, so a caller that asks for this check and cannot
+    reach it gets an error rather than a silent pass -- a skipped check here is
+    how a dead Matrix channel shipped.
+    """
+    from tools.lazy_deps import LAZY_DEPS
+
+    wanted = {canonicalize_name(name) for name in pins}
+    problems = []
+    for feature, specs in sorted(LAZY_DEPS.items()):
+        for raw in specs:
+            req = Requirement(raw)
+            if canonicalize_name(req.name) not in wanted:
+                continue
+            got = installed(req.name)
+            if got is None:
+                problems.append(
+                    f"LAZY_DEPS[{feature!r}] declares {raw!r}: {req.name} is not installed"
+                )
+            elif not req.specifier.contains(got, prereleases=True):
+                problems.append(
+                    f"LAZY_DEPS[{feature!r}] declares {raw!r} but {req.name} is {got} -- "
+                    f"upstream will report feature {feature!r} unavailable and skip its adapter"
+                )
+    return problems
+
+
 def main(argv: list[str]) -> int:
+    check_lazy = "--lazy-deps" in argv
+    argv = [a for a in argv if a != "--lazy-deps"]
     if not argv:
         print(USAGE, file=sys.stderr)
         return 2
@@ -110,6 +151,8 @@ def main(argv: list[str]) -> int:
     for name, (_, extras) in sorted(pins.items()):
         if installed(name) is not None:
             problems += unmet_floors(name, extras)
+    if check_lazy:
+        problems += lazy_deps_conflicts(pins)
 
     for name in sorted(pins):
         print(f"  {name}=={installed(name)}")
@@ -121,7 +164,8 @@ def main(argv: list[str]) -> int:
         print(f"{len(problems)} problem(s) with the diverged security pins", file=sys.stderr)
         return 1
 
-    print("pins verified: versions exact, declared floors satisfied")
+    tail = ", upstream's LAZY_DEPS gates agree" if check_lazy else ""
+    print(f"pins verified: versions exact, declared floors satisfied{tail}")
     return 0
 
 

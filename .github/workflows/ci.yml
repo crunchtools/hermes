@@ -6,10 +6,14 @@
 # Matrix as the live agent and takes over its identity. Nothing in this
 # workflow may change that.
 #
-# The two new scripts are here because both decide something that fails
-# quietly rather than loudly: scripts/floating-tag.sh picks which image a
-# podman-auto-update host pulls, and tests/verify-pins.py is the only thing
-# that notices a pin that did not land under `uv pip install --no-deps`.
+# These scripts are here because each decides something that fails quietly
+# rather than loudly: scripts/floating-tag.sh picks which image a
+# podman-auto-update host pulls; tests/verify-pins.py is the only thing that
+# notices a pin that did not land under `uv pip install --no-deps`, or a
+# shipped version that upstream's own LAZY_DEPS table does not expect; and
+# scripts/reconcile-lazy-deps.py edits a cloned third-party file at build
+# time, where rewriting too little leaves a platform dead and rewriting too
+# much changes pins nobody reviewed.
 #
 # No pytest. This repo is packaging only, so there is no Python project to
 # hang a test runner on; both suites are run directly, one by bash and one by
@@ -59,3 +63,6 @@ jobs:
 
       - name: Pin verifier tests
         run: python3 tests/test-verify-pins.py
+
+      - name: Lazy-deps reconciler tests
+        run: python3 tests/test-reconcile-lazy-deps.py

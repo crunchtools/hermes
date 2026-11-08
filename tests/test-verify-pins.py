@@ -36,12 +36,22 @@ def make_site(root: Path, dists: dict[str, tuple[str, list[str]]]) -> Path:
     return site
 
 
-def run(site: Path, *args: str) -> subprocess.CompletedProcess:
+def make_lazy_deps(root: Path, table: dict[str, tuple[str, ...]]) -> Path:
+    """Write a stand-in `tools.lazy_deps` exposing LAZY_DEPS, for --lazy-deps."""
+    pkg = root / "lazy" / "tools"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "lazy_deps.py").write_text(f"LAZY_DEPS = {table!r}\n")
+    return pkg.parent
+
+
+def run(site: Path, *args: str, extra_path: tuple[Path, ...] = ()) -> subprocess.CompletedProcess:
     # -I so the script cannot pick anything up from the cwd, but then
     # PYTHONPATH is ignored, so pass the fake site-packages via -S-free
     # sys.path injection instead: run a tiny launcher.
     launcher = (
         f"import sys; sys.path.insert(0, {str(site)!r}); "
+        f"[sys.path.insert(0, p) for p in {[str(p) for p in extra_path]!r}]; "
         f"sys.argv = ['verify-pins.py', *{list(args)!r}]; "
         f"exec(open({str(SCRIPT)!r}).read())"
     )
@@ -202,6 +212,58 @@ def main() -> int:
             r.stdout + r.stderr,
             "installed yarl is 1.22.0",
         )
+
+        # --- check 3: upstream's own LAZY_DEPS gates -------------------------
+        # This is the v1.1.0 regression. aiohttp 3.14.4 was installed and
+        # correct; upstream's table still declared 3.14.3, so is_available()
+        # reported platform.matrix unavailable and Kagetora lost Matrix.
+        lazy = make_lazy_deps(
+            root / "lazy_bad",
+            {
+                "platform.matrix": ("mautrix[encryption]==0.21.1", "aiohttp==3.14.3"),
+                "tool.vision": ("Pillow==12.3.0",),
+            },
+        )
+        r = run(clean, "--lazy-deps", "aiohttp==3.14.4", extra_path=(lazy,))
+        out = r.stdout + r.stderr
+        check("a stale LAZY_DEPS pin fails", r.returncode, 1, out, "platform.matrix")
+        check("...and says the adapter is skipped", r.returncode, 1, out, "skip its adapter")
+
+        # A feature naming a package we did not pin is none of our business.
+        check(
+            "...and does not complain about unpinned packages",
+            0 if "tool.vision" not in out else 1,
+            0,
+            out,
+        )
+
+        lazy_ok = make_lazy_deps(
+            root / "lazy_ok",
+            {"platform.matrix": ("mautrix[encryption]==0.21.1", "aiohttp==3.14.4")},
+        )
+        r = run(clean, "--lazy-deps", "aiohttp==3.14.4", extra_path=(lazy_ok,))
+        check(
+            "a reconciled LAZY_DEPS pin passes",
+            r.returncode,
+            0,
+            r.stdout + r.stderr,
+            "LAZY_DEPS gates agree",
+        )
+
+        # Without the flag the table is not consulted at all, so the same
+        # stale pin passes -- which is precisely the v1.1.0 build.
+        r = run(clean, "aiohttp==3.14.4", extra_path=(lazy,))
+        check(
+            "without --lazy-deps the stale pin is not seen",
+            r.returncode,
+            0,
+            r.stdout + r.stderr,
+            "pins verified",
+        )
+
+        # Asking for the check and not being able to run it must NOT pass.
+        r = run(clean, "--lazy-deps", "aiohttp==3.14.4")
+        check("--lazy-deps with no lazy_deps module fails", r.returncode, 1, r.stdout + r.stderr)
 
         # 2, not 1: a bad argument is a caller error, distinct from a pin
         # that failed to verify.

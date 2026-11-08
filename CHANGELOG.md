@@ -6,11 +6,66 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-08
+
 ### Fixed
 
-- The image carries a `version` label (1.1.0). The release sweep moves the
+- **Kagetora's Matrix channel, which 1.1.0 took down.** Deployed at 07:53 UTC,
+  the gateway came up with no Matrix adapter at all and Nagios went CRITICAL
+  on "Hermes platforms":
+
+  ```
+  WARNING tools.lazy_deps: Feature 'platform.matrix' unavailable: lazy installs disabled
+  WARNING ...matrix.adapter: Matrix: required packages not installed (aiohttp==3.14.3)
+  WARNING gateway.platform_registry: Platform 'Matrix' requirements not met
+  ERROR   gateway.run: Platform 'matrix' is registered but adapter creation failed
+  ```
+
+  Nothing in the image was broken. hermes-agent's `tools/lazy_deps.py` holds a
+  `LAZY_DEPS` table of exact pins and `is_available(feature)` compares the
+  **installed** version against them; a platform's registry `check_fn` is that
+  call. 1.1.0 shipped aiohttp 3.14.4 over upstream's declared `aiohttp==3.14.3`,
+  so the string comparison failed, the feature reported itself unavailable, and
+  `create_adapter()` returned None. Every package the matrix group names was
+  present and importable the whole time.
+
+  The fix keeps aiohttp 3.14.4 and reconciles upstream's declared pins with
+  what the image actually ships, via `scripts/reconcile-lazy-deps.py`, for
+  exactly the packages the divergence block moved. Upstream's pins are floors
+  by their own account — `LAZY_DEPS` calls them "shared patched floors" and
+  their pyproject's matrix extra says *"aiohttp 3.14.3: prior CVEs + …
+  (mautrix/aiohttp-socks only cap aiohttp<4 / >=3.10, so pin the patched floor
+  directly)"*. Measured in the shipped image rather than assumed: mautrix
+  0.21.1 requires `aiohttp<4,>=3` and `yarl<2,>=1.5`, aiohttp-socks 0.11.0
+  requires `aiohttp>=3.10.0`, and both import against aiohttp 3.14.4 and yarl
+  1.25.1.
+
+  **Rejected: reverting aiohttp to 3.14.3 and adding three `.trivyignore`
+  entries for its HIGHs.** It would have worked, and it costs three
+  DoS-class findings plus a lie in a different file — upstream's table would
+  still not describe the image. It also would not have fixed `tool.vision`,
+  which 1.1.0 broke in exactly the same way (`Pillow==12.3.0` declared against
+  the shipped 13.0.0) and which the reconciliation clears in the same pass. No
+  `.trivyignore` entry was added and all seven CRITICALs stay cleared.
+
+- The same class of fault cannot ship again unnoticed. `verify-pins.py` gained
+  a third check, `--lazy-deps`: it walks upstream's table and fails the build
+  when any shipped version violates a pin declared for it, naming the feature
+  that would go dark. Checks one and two both passed the 1.1.0 build, which is
+  the whole argument for the third. The build now also asserts the real gate on
+  the real module — `matrix_deps_present()` and `ensure_matrix_deps()`, the
+  registry's `check_fn` and the installer leg it falls back to — without ever
+  starting a gateway.
+
+- The image carries a `version` label (1.1.1). The release sweep moves the
   version in tracked files, and with none stating it outside the changelog it
   refused to cut this repository's next release.
+
+### Changed
+
+- The repo's manifest constitution gains a fifth condition on a security
+  divergence: it must leave upstream's own runtime dependency gates satisfied,
+  and a pin that moves one must reconcile it in the same change.
 
 ## [1.1.0] - 2026-11-08
 

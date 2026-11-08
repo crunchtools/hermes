@@ -120,6 +120,11 @@ and takes over its identity.
   only divergence from upstream's resolution and it is meant to shrink: drop a
   pin when `uv.lock` reaches the same floor. See `.trivyignore` for the
   findings that a pin cannot reach
+- Upstream's own `LAZY_DEPS` pins are reconciled to the shipped versions at
+  build time. `tools.lazy_deps.is_available()` compares installed versions
+  against that table and a platform's registry `check_fn` is that call, so a
+  pin the table does not expect takes the platform offline with every package
+  present — it did, to Matrix, in 1.1.0
 - `signal-cli` native binary baked in for Signal channel (`SIGNAL_CLI_VERSION` build arg)
 - Multi-stage build; runtime image carries no build tools. It does carry `pip`,
   from the Hummingbird base rather than from anything this repo installs
