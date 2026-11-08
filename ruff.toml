@@ -1,0 +1,27 @@
+# Two Python files live in this repo: tests/verify-pins.py, the guard that
+# makes the Containerfile's `uv pip install --no-deps` divergence safe, and
+# its tests. Everything else here is packaging.
+#
+# ruff.toml and NOT pyproject.toml, which is the file Gourmand's IF001 looks
+# for. See gourmand-exceptions.toml: constitution v1.31.0's `is_sdlc_repo`
+# defines a Python repo as "has a pyproject.toml" and then requires the full
+# crunchtools/python-sdlc wiring. Adding the file to satisfy a linter check
+# would therefore fail the constitution gate and demand a Python toolchain
+# this packaging repo has no use for. ruff reads this file natively, the hook
+# in .pre-commit-config.yaml runs it, and the thresholds below are explicit.
+line-length = 100
+# The image's interpreter. The tests also run on the GitHub runner's python3,
+# which is never older than this.
+target-version = "py313"
+
+[lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "C901", "RET", "SIM", "ARG", "PLR", "RUF"]
+
+# Explicit thresholds rather than ruff's implicit defaults, so raising one is a
+# visible decision. Matched to python-sdlc.
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-branches = 10
+max-statements = 50

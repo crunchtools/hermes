@@ -1,0 +1,7 @@
+# Gourmand exceptions: findings that are the repo's design, each with a reason.
+
+[[exceptions]]
+check = "IF001-linter_configuration"
+path = "pyproject.toml"
+justification = "This is a packaging repo, not a Python project. Its only Python is tests/verify-pins.py, the guard on the Containerfile's dependency divergence, and that script's tests. ruff IS configured, with explicit C901/PLR thresholds, and IS wired into .pre-commit-config.yaml from astral-sh/ruff-pre-commit for both the pre-commit and pre-merge-commit stages -- the configuration simply lives in ruff.toml, which ruff reads natively and this check does not. Adding a pyproject.toml to satisfy the check would fail the constitution gate instead: v1.31.0's is_sdlc_repo() defines a Python repo as one that has a pyproject.toml and then requires the whole crunchtools/python-sdlc toolchain, which a repo with two test scripts and no package has no use for."
+classification = "by_design"

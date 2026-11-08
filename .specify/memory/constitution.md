@@ -1,6 +1,6 @@
 # hermes Constitution
 
-> **Version:** 1.1.0
+> **Version:** 2.0.0
 > **Ratified:** 2026-10-02
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -41,12 +41,50 @@ Every model call still goes to Trentina, which holds the provider key.
 ## Layer 3 — Container & Supply Chain Security
 
 - **Image:** `quay.io/crunchtools/hermes` and `ghcr.io/crunchtools/hermes`.
-- **Upstream build, unmodified:** Hermes is cloned at the `HERMES_REF` git
-  tag and installed the way upstream's own Dockerfile does it (`uv sync
-  --frozen --no-install-project`, then an editable `--no-deps` install).
-  Upstream stopped publishing to PyPI after 0.19.0 and blocks wheel and sdist
-  builds. Upstream's `uv.lock` decides every dependency: no overrides, no
-  forced upgrades. The one addition is `pypdf`.
+- **Tags:** one floating tag per run, computed in the version step.
+  `:latest` is the newest stable **release** and moves only on a `vX.Y.Z` tag
+  (inherited constitution 1.33.0); the default branch moves `:main`, a pull
+  request moves `:pr-N`, a prerelease tag moves only itself. `latest`, `main`
+  and `pr-*` are reserved: a branch build may not claim one. Every run also
+  pushes a commit-derived `git describe` tag; it is distinct per commit but
+  not registry-immutable, so anything that needs immutability pins the
+  digest. This is not a cascade image, so
+  the 1.34.0 exception does not apply. The build workflow carries **no
+  `paths:` filter** — the filter decided whether a commit on the default
+  branch was built at all, and five doc-only merges in a row left the head of
+  `main` with no image behind it.
+- **Upstream build, then a named security divergence:** Hermes is cloned at
+  the `HERMES_REF` git tag and installed the way upstream's own Dockerfile
+  does it (`uv sync --frozen --no-install-project`, then an editable
+  `--no-deps` install). Upstream stopped publishing to PyPI after 0.19.0 and
+  blocks wheel and sdist builds. Upstream's `uv.lock` decides every dependency
+  **except** the packages listed in the Containerfile's divergence block, and
+  the one addition, `pypdf`.
+
+  Until 2026-11-08 the rule here was absolute: no overrides, no forced
+  upgrades, whatever CVEs the lockfile implies are reported rather than
+  fought. That rule and a publishable image stopped being compatible.
+  Upstream shipped no tag that resolves clean, the blocking Trivy gate failed
+  on every build from 2026-10-21, and `:latest` went three weeks without
+  moving while the Kagetora seat ran the stale image
+  (crunchtools/hermes#40). Scott ruled on 2026-11-08: upgrade it as
+  necessary. So the rule is now bounded rather than absolute, and the bounds
+  are what matter:
+
+  - a divergence MUST be a **security** upgrade — a package with a
+    HIGH/CRITICAL finding and a published fixed version, or a dependency
+    forced by one;
+  - it MUST be the smallest version that clears the finding, installed with
+    `--no-deps` so the closure cannot drift, with its dependency floors
+    checked against upstream's lock and **asserted in the build**;
+  - it MUST carry, in the Containerfile beside the pin, what it fixes, why a
+    `.trivyignore` entry was not the answer, and what reachability was
+    actually measured;
+  - it is to be **dropped, not bumped**, the moment upstream's `uv.lock`
+    reaches the same floor. A divergence that outlives its finding is a bug.
+
+  An upgrade is always preferred to an ignore entry. `.trivyignore` is for
+  findings no pin can reach.
 - **Extras:** `mcp`, `matrix`, `vision`, `cron`, `pty`, `web`, `youtube`,
   `anthropic` (the SDK for the `anthropic_messages` wire to Trentina). Left
   out: Google, Discord/Telegram/Slack messaging, voice/wake/TTS (no audio
@@ -109,3 +147,4 @@ anomaly checks) are not yet recorded in this repo.
 |---------|------|---------|
 | 1.0.0 | 2026-10-02 | First constitution, written as a v1.18.0 manifest from the README, Containerfile, build workflow and `.trivyignore` |
 | 1.1.0 | 2026-10-17 | `anthropic` extra admitted as the wire client for Trentina's `/llm/anthropic`; every model call still goes through the gateway |
+| 2.0.0 | 2026-11-08 | Breaking: "upstream's `uv.lock` decides every dependency, no overrides" becomes a bounded rule rather than an absolute one. A security divergence is permitted under four conditions and must be dropped when upstream catches up; an upgrade is preferred to a `.trivyignore` entry. Ruled by Scott after the blocking Trivy gate failed on every build from 2026-10-21 over 35 HIGH/CRITICAL findings in upstream's closure, leaving `:latest` three weeks stale (crunchtools/hermes#40). Also records `:latest` as the newest stable release per inherited constitution 1.33.0 |
