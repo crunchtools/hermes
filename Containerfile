@@ -135,6 +135,89 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir \
         --python /app/hermes/.venv/bin/python \
         "pypdf==${PYPDF_VERSION}"
 
+# ─── Five pins that DIVERGE from upstream's uv.lock ───────────────────────
+#
+# READ THIS BEFORE TOUCHING ANY VERSION BELOW. Everything above installs
+# hermes-agent exactly as upstream prescribes and lets uv.lock decide every
+# version. These five are the deliberate exception and the only one.
+#
+# Why: from 2026-10-21 the blocking Trivy gate reported 35 HIGH/CRITICAL
+# findings in upstream's locked closure, so quay.io/crunchtools/hermes:latest
+# stopped publishing altogether and the Kagetora seat on gloval ran a
+# three-week-old image (crunchtools/hermes#40). Upstream has shipped no tag
+# that resolves clean. Scott ruled on 2026-11-08: upgrade it, do not accept
+# it. So these are upgrades, not .trivyignore lines.
+#
+# What each one buys, against the gate's own report (run 42442873113):
+#   pillow  12.3.0    -> 13.0.0      28 findings, 5 CRITICAL -- heap overflow
+#     in the TIFF/JPEG/FlashPix decoders and argument injection into the
+#     Ghostscript call. REACHABLE, measured, not assumed: the gateway accepts
+#     inbound image attachments, upstream's tools/vision_tools.py hands them
+#     to PIL.Image.open through _normalize_to_supported_image, and this image
+#     installs --extra vision on purpose.
+#   aiohttp 3.14.3    -> 3.14.4      3 HIGH -- DoS via a missing initial
+#     request timeout and via file-descriptor exhaustion on multipart.
+#     REACHABILITY NOT TRACED. aiohttp is in the image because the matrix
+#     extra depends on it, and both findings are server-side; whether Hermes
+#     ever listens with it was not established. Bumped anyway because the fix
+#     is a patch release and establishing it is more work than taking it.
+#   yarl    1.22.0    -> 1.25.1      no findings of its own, so reachability
+#     does not arise. FORCED: aiohttp 3.14.4 requires yarl>=1.25.1 and
+#     upstream locks 1.22.0. Named here so the version is reviewed rather
+#     than whatever a resolver reached for.
+#   PyJWT   2.13.0    -> 2.14.0      1 HIGH (GHSA-pxh4-856f-4h89) plus the six
+#     PyJWT CVEs .trivyignore used to carry. All seven are fixed in 2.14.0,
+#     so this bump DELETES ignore lines instead of adding one.
+#     REACHABILITY NOT TRACED, and .trivyignore said as much when it accepted
+#     these on 2026-10-01: where Hermes verifies a JWT was never established.
+#     That was an argument for accepting them; it is not an argument against
+#     a one-minor-version bump that ends the question.
+#   certifi 2026.5.20 -> 2026.10.18  1 CRITICAL -- bundled emSign roots whose
+#     intermediate CA keys were compromised. REACHABLE by construction: this
+#     is the trust store every outbound TLS call in the venv validates
+#     against, so a bad root is reachable from any of them. Nothing to trace.
+#
+# --no-deps IS DELIBERATE: it installs exactly these five versions and moves
+# nothing else, so the divergence is auditable and cannot quietly grow. The
+# cost is that nothing raises a dependency floor for us -- aiohttp 3.14.4
+# wants yarl>=1.25.1 where upstream locks 1.22.0, which is the whole reason
+# yarl is in this list. That is not left to this comment to get right:
+# tests/verify-pins.py runs after the install and asserts both the exact
+# versions and every requirement these packages declare, against what is
+# actually in the venv. It is handed the same specs, extras included --
+# PyJWT[crypto] is upstream's spelling and the extra's own floor
+# (cryptography>=3.4.0, locked at 50.0.0) is part of what gets checked. A
+# floor missed here fails the build, not the container.
+#
+# No --exclude-newer-package here, unlike pypdf above: upstream's rolling
+# 14-day quarantine is already satisfied. pillow 13.0.0 was published
+# 2026-10-16, aiohttp 3.14.4 2026-10-05, yarl 1.25.1 2026-09-15, PyJWT 2.14.0
+# 2026-09-11, certifi 2026.10.18 2026-10-18. They only get older, so the
+# quarantine never blocks these pins and no exemption is owed.
+#
+# Nothing watches these. dependabot.yml covers the docker and github-actions
+# ecosystems only, there being no language manifest in this repo, so the next
+# finding arrives as a red gate. Each pin is to be DROPPED, not bumped, the
+# moment upstream's uv.lock reaches the same floor; until then a bump is a
+# hand review against the Trivy report.
+#
+# Left alone on purpose: the anyio / httpcore2 / httpx2 and urllib3 entries
+# still in .trivyignore. Those are accepted findings, not blocking ones, and
+# widening this block to chase them would widen the divergence without
+# unblocking anything.
+ARG PILLOW_VERSION=13.0.0
+ARG AIOHTTP_VERSION=3.14.4
+ARG YARL_VERSION=1.25.1
+ARG PYJWT_VERSION=2.14.0
+ARG CERTIFI_VERSION=2026.10.18
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
+        --python /app/hermes/.venv/bin/python \
+        "pillow==${PILLOW_VERSION}" \
+        "aiohttp==${AIOHTTP_VERSION}" \
+        "yarl==${YARL_VERSION}" \
+        "PyJWT[crypto]==${PYJWT_VERSION}" \
+        "certifi==${CERTIFI_VERSION}"
+
 # Report what actually landed, and fail the build if the pieces Kagetora cannot
 # run without are missing.
 # Run the real entry point, not just an import. The previous deploy failed with
@@ -144,10 +227,26 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir \
 RUN /app/hermes/.venv/bin/hermes --version
 
 RUN /app/hermes/.venv/bin/python -c "import importlib.metadata as m; \
-    import mcp, mautrix, PIL, cryptography, aiohttp; \
+    import mcp, mautrix, PIL, cryptography, aiohttp, yarl, jwt, certifi, pypdf; \
     print('hermes-agent', m.version('hermes-agent'), '| mcp', m.version('mcp'), \
-          '| mautrix', m.version('mautrix'), '| aiohttp', m.version('aiohttp'), \
-          '| Pillow', m.version('pillow'), '| cryptography', cryptography.__version__)"
+          '| mautrix', m.version('mautrix'), '| cryptography', cryptography.__version__)"
+
+# The divergence above is only as good as this check. --no-deps installs
+# blind, so verify-pins.py asserts both halves of what that block claims: the
+# six pins landed at exactly these versions, and every requirement those
+# packages declare is satisfied by what is installed. The second half is why
+# it is a script and not a comment -- aiohttp 3.14.4's `yarl>=1.25.1` against
+# upstream's locked 1.22.0 is caught here whether or not anyone remembered to
+# write the floor down, and so is the next one.
+COPY tests/verify-pins.py /tmp/verify-pins.py
+RUN /app/hermes/.venv/bin/python /tmp/verify-pins.py \
+        "pillow==${PILLOW_VERSION}" \
+        "aiohttp==${AIOHTTP_VERSION}" \
+        "yarl==${YARL_VERSION}" \
+        "PyJWT[crypto]==${PYJWT_VERSION}" \
+        "certifi==${CERTIFI_VERSION}" \
+        "pypdf==${PYPDF_VERSION}" \
+    && rm /tmp/verify-pins.py
 
 WORKDIR /build
 
@@ -225,6 +324,31 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 # which can't write into /bin or /usr/bin. Switch back to that default after.
 USER 0
 RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname timeout'.split()]"]
+
+# This pip is the BASE IMAGE's, not ours and not upstream's: Hummingbird's
+# python:3.13 ships pip 26.2 in /usr/local/lib/python3.13/site-packages, which
+# is why Trivy files its findings under the aggregate "Python" target with no
+# path and no "(METADATA)" marker and why they look like they come from
+# nowhere. Measured by walking a pulled image, not inferred.
+#
+# pip 26.2 vendors certifi 2026.6.17 (GHSA-6q48-6c7w-9gw2, CRITICAL) and
+# msgpack 1.1.2 (CVE-2026-114613 and GHSA-6v7p-g79w-8964, both HIGH). pip 26.3
+# revendors certifi 2026.10.23 and msgpack 1.2.4 and fixes all three; it
+# carries no advisory of its own. Its vendored setuptools is STILL 70.3.0, so
+# the two setuptools entries in .trivyignore stay exactly as they are.
+#
+# Not deleted instead: .trivyignore has recorded since 2026-10-01 that
+# removing pip is unsafe because hermes-agent's tools/lazy_deps.py self-heals
+# a lean install at runtime. Upgrading is the smaller move, and this line
+# should be DROPPED -- not bumped -- as soon as Hummingbird's python:3.13
+# ships pip >= 26.3, because then it is pure duplication.
+#
+# Shell form, and it has to sit after the symlink RUN above: exec form does
+# not expand ARGs, and /bin/sh does not exist until that RUN creates it.
+ARG PIP_VERSION=26.3
+RUN /usr/sbin/python3.13 -m pip install --no-cache-dir --root-user-action=ignore \
+        --upgrade "pip==${PIP_VERSION}" && \
+    /usr/sbin/python3.13 -c "import pip, sys; sys.exit(0 if pip.__version__ == '${PIP_VERSION}' else 'pip still ' + pip.__version__)"
 
 
 # The entrypoint wrapper. It starts the same `hermes gateway run` this image

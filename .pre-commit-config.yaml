@@ -1,4 +1,16 @@
 repos:
+  # tests/*.py only -- see ruff.toml. The hook comes from ruff's own repo so
+  # the linter runs from a pre-commit-managed environment rather than a host
+  # install (constitution XII).
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        stages: [pre-commit, pre-merge-commit]
+      - id: ruff-format
+        stages: [pre-commit, pre-merge-commit]
+
   - repo: local
     hooks:
       - id: gourmand

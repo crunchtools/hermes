@@ -1,25 +1,41 @@
-# Hermes 0.21.5, built exactly as upstream prescribes: their git tag, their
-# uv.lock, no overrides. Every finding below comes from pip's own vendored
-# bundle or from the mcp package's own pin -- not from Hermes's dependency
-# tree, which resolves clean on its own.
+# This file is for findings nothing in this repo can fix. It is NOT the place
+# to quiet a finding that an upgrade would clear: as of 2026-11-08 the
+# Containerfile pins pillow, aiohttp, yarl, PyJWT and certifi above upstream's
+# uv.lock, and bumps the base image's pip, precisely so those findings do not
+# have to live here. Scott's ruling that day was "upgrade it as necessary" --
+# so if a new finding has a fixed version, bump the pin and leave this file
+# alone. Read the divergence block in the Containerfile before adding an entry.
 #
-# Every remaining finding lives inside pip's vendored bundle
-# (site-packages/pip/_vendor/), not in a package Hermes imports. Confirmed by
-# reading a built image: the vendored msgpack/__init__.py declares (1, 1, 2),
-# with pkg_resources beside it. Trivy files them under its aggregate "Python"
-# target with no path in the report summary and no "(METADATA)" marker.
+# Three PyJWT HIGHs, one PyJWT CRITICAL, two more PyJWT HIGHs and one msgpack
+# HIGH were deleted from this file on 2026-11-08 because the PyJWT 2.14.0 pin
+# and the pip 26.3 bump fix them outright. That is the shape every future
+# entry should be measured against.
+
+# setuptools, inside the base image's pip. Hummingbird's python:3.13 ships pip
+# in /usr/local/lib/python3.13/site-packages, and Trivy files its vendored
+# bundle under the aggregate "Python" target with no path and no "(METADATA)"
+# marker, which is why these look like they come from nowhere.
 #
-# Not fixable: the versions are frozen inside pip itself. Removing pip is
-# unsafe because Hermes lazy-installs skill dependencies at runtime.
+# Not fixable by a pin: the version is frozen inside pip. The Containerfile
+# upgrades pip to 26.3 (which does fix the vendored certifi and msgpack), but
+# 26.3 still vendors setuptools 70.3.0, so these two survive the bump.
 #
-# Not reachable: all three require pip to talk to a package index. This
-# container never runs pip at runtime, has no direct egress (internal=true
-# network), and reaches every tool through the Trentina gateway.
+# Removing pip is unsafe because hermes-agent's tools/lazy_deps.py self-heals
+# a lean install at runtime.
 #
-#   HIGH    GHSA-6v7p-g79w-8964  msgpack 1.1.2      OOB read / crash on Unpacker reuse
-#   HIGH    CVE-2025-47273       setuptools 70.3.0  path traversal in PackageIndex
-#   MEDIUM  CVE-2026-59890       setuptools 83.0.0  MANIFEST.in exclusion bypass
-GHSA-6v7p-g79w-8964
+# Not reachable: both require pip to talk to a package index. This container
+# never runs pip at runtime, has no direct egress (internal=true network), and
+# reaches every tool through the Trentina gateway.
+#
+# Revisit when any of three things changes, whichever comes first: pip
+# revendors setuptools above 70.3.0 (watch `src/pip/_vendor/vendor.txt` at the
+# `PIP_VERSION` the Containerfile pins), Hummingbird's python:3.13 stops
+# shipping pip so the bundle leaves the image, or this container gains direct
+# egress or a reason to run pip at runtime -- which would end the
+# unreachability argument on its own. Check at every `PIP_VERSION` bump.
+#
+#   HIGH    CVE-2025-47273  setuptools 70.3.0  path traversal in PackageIndex
+#   MEDIUM  CVE-2026-59890  setuptools 83.0.0  MANIFEST.in exclusion bypass
 CVE-2025-47273
 CVE-2026-59890
 
@@ -43,37 +59,23 @@ CVE-2026-63374
 CVE-2026-84381
 CVE-2026-84382
 
-# PyJWT / urllib3 -- disclosed after the 1.0.1 build, so they first blocked
-# the gate on the bump to v2026.9.24. The bump does not introduce them:
-# upstream's uv.lock pins PyJWT==2.13.0 and urllib3==2.7.0 at v2026.8.31, at
-# v2026.9.24 and on main, and the image already in production carried both.
-# Staying on the old tag would not have removed one of these findings; any
-# rebuild of it fails the same gate.
+# urllib3 2.7.0 -- upstream's uv.lock pins it at v2026.8.31, at v2026.9.24 and
+# on main, and no upstream release has moved it. The PyJWT entries that used
+# to sit in this block are gone: the Containerfile now pins PyJWT 2.14.0,
+# which fixes all six of them plus GHSA-pxh4-856f-4h89.
 #
-# No upstream release fixes them yet. NousResearch/hermes-agent#128979 (bump
-# PyJWT to 2.14.0) is open. Per this file's rule, the lockfile is not
-# overridden here.
+# urllib3 is NOT pinned alongside it, deliberately. These two are accepted
+# findings, not blocking ones, and the 2026-11-08 divergence was kept to the
+# packages that were actually failing the gate. Pinning urllib3>=2.8.0 is the
+# obvious next candidate and wants its own review.
 #
-# Accepted by Scott (2026-10-01) on the same isolation as the entries above:
-# no direct egress, every outbound call through the Trentina gateway. Where
-# Hermes verifies a JWT, and whether any path uses an HTTPS proxy through
-# urllib3, was not traced -- this is an acceptance of unchanged exposure, not
-# a finding that the code is unreachable. Remove each entry when upstream's
-# lockfile moves to PyJWT>=2.14.0 / urllib3>=2.8.0.
+# Accepted by Scott (2026-10-01): no direct egress, every outbound call
+# through the Trentina gateway. Whether any path uses an HTTPS proxy through
+# urllib3 was not traced -- this is an acceptance of unchanged exposure, not a
+# finding that the code is unreachable. Remove when upstream's lockfile moves
+# to urllib3>=2.8.0, or when a pin lands in the Containerfile.
 #
-#   CRITICAL  CVE-2026-102268  PyJWT 2.13.0    (see advisory)
-#   HIGH      CVE-2026-102266  PyJWT 2.13.0    auth bypass via empty HMAC key acceptance
-#   HIGH      CVE-2026-102267  PyJWT 2.13.0    key substitution via unvalidated JWKS redirects
-#   HIGH      CVE-2026-102271  PyJWT 2.13.0    auth bypass via DER public keys accepted as HMAC
-#   HIGH      CVE-2026-102272  PyJWT 2.13.0    token forgery via Unicode byte-order mark handling
-#   HIGH      CVE-2026-102273  PyJWT 2.13.0    token forgery via public JWK containers accepted as HMAC
-#   HIGH      CVE-2026-97687   urllib3 2.7.0   traffic interception via HTTPS proxy TLS config override
-#   HIGH      CVE-2026-97689   urllib3 2.7.0   DoS via unbounded allocation in chunk parser
-CVE-2026-102268
-CVE-2026-102266
-CVE-2026-102267
-CVE-2026-102271
-CVE-2026-102272
-CVE-2026-102273
+#   HIGH  CVE-2026-97687  urllib3 2.7.0  traffic interception via HTTPS proxy TLS config override
+#   HIGH  CVE-2026-97689  urllib3 2.7.0  DoS via unbounded allocation in chunk parser
 CVE-2026-97687
 CVE-2026-97689

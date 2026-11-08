@@ -25,6 +25,17 @@ periodic environment reports). Messaging via Signal.
 podman build -t quay.io/crunchtools/hermes .
 ```
 
+## Tags
+
+Per constitution 1.33.0, `:latest` is the newest stable **release** — it moves
+only on a `vX.Y.Z` tag push. A merge to the default branch moves `:main`, a
+pull request moves `:pr-N`, and a prerelease tag moves only itself. Every run
+also pushes a commit-derived `git describe` tag — distinct per commit, but
+nothing in the registry stops a re-run of the same commit from overwriting it,
+so pin a digest where that matters. A systemd unit that means "the
+newest thing that was deliberately shipped" wants `:latest`; one that means
+"the head of main" has to say `:main`.
+
 ## Run (mirrors the openclaw layout)
 
 ```bash
@@ -102,8 +113,16 @@ and takes over its identity.
   clone at a pinned tag (`HERMES_REF` build arg) with `uv sync --frozen` and
   an editable `uv pip install --no-deps`. Upstream publishes no usable PyPI
   release and blocks wheel builds from source
+- Five packages pinned **above** upstream's `uv.lock` — `pillow`, `aiohttp`,
+  `yarl`, `PyJWT`, `certifi` — plus `pypdf`, which upstream does not lock at
+  all, and the base image's `pip`. Every one of them is a security bump, each
+  is a build arg, and the Containerfile explains each in place. This is the
+  only divergence from upstream's resolution and it is meant to shrink: drop a
+  pin when `uv.lock` reaches the same floor. See `.trivyignore` for the
+  findings that a pin cannot reach
 - `signal-cli` native binary baked in for Signal channel (`SIGNAL_CLI_VERSION` build arg)
-- Multi-stage build; runtime image carries no build tools or package manager
+- Multi-stage build; runtime image carries no build tools. It does carry `pip`,
+  from the Hummingbird base rather than from anything this repo installs
 - No `HEALTHCHECK`: the container exposes no port on the hosts that run it, so
   readiness is the log line above rather than a probe
 

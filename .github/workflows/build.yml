@@ -1,7 +1,7 @@
 name: Build and Push Hermes
 
 # Triggers (deliberately NO `schedule:`):
-#   push   — Containerfile / workflow / config changes, or a vX.Y.Z tag
+#   push   — any commit on main, or a vX.Y.Z tag
 #            (constitution II: tags trigger release workflows)
 #   workflow_dispatch — manual rebuild
 #   repository_dispatch parent-image-updated — fired by Hermes itself when it
@@ -23,15 +23,25 @@ name: Build and Push Hermes
 # .trivyignore, and that is left alone — turning a security gate advisory is
 # not a side effect a CI cleanup should have.
 
+# No `paths:` filter, and do not add one back. It used to list Containerfile,
+# rootfs/**, .trivyignore and this file, on the reasoning that nothing else can
+# change the image. That is true of the image CONTENT and false of the thing
+# that matters: the filter also decides whether a commit on main gets built at
+# all, so five merges in a row that touched only docs, CHANGELOG or .specify/
+# produced no build and no push, and the branch's newest commit had no image
+# behind it for three weeks (crunchtools/hermes#40). A doc-only rebuild costs
+# five minutes of a runner; a default branch whose head was never built costs
+# a stale agent in production. GitHub does not evaluate path filters on tag
+# pushes, so only the branch half was ever affected.
+#
+# The extra builds are also cheaper than they look: cache-to: type=gha,mode=max
+# below means a commit that changes no image input is a cache hit end to end,
+# so what a doc-only run actually spends is the Trivy scan and the push, not
+# the install of hermes-agent. ci.yml made the same call for the same reason.
 on:
   push:
     branches: [main]
     tags: ['v*']
-    paths:
-      - 'Containerfile'
-      - 'rootfs/**'
-      - '.trivyignore'
-      - '.github/workflows/build.yml'
   pull_request:
     branches: [main]
   repository_dispatch:
@@ -51,6 +61,7 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       sha_short: ${{ steps.version.outputs.sha_short }}
+      floating: ${{ steps.version.outputs.floating }}
 
     steps:
       - name: Checkout
@@ -62,6 +73,12 @@ jobs:
           TAG=$(git describe --tags --always 2>/dev/null || echo "v0.1.0")
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # The ONE floating tag this run moves, computed by
+          # scripts/floating-tag.sh so tests/test-floating-tag.sh can drive
+          # every branch of it. It decides which image a podman-auto-update
+          # host pulls, so it is not inline shell nobody can test.
+          floating=$(bash scripts/floating-tag.sh)
+          echo "floating=$floating" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -129,7 +146,7 @@ jobs:
           file: ./Containerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.QUAY_IMAGE }}:latest
+            ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.floating }}
             ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -169,7 +186,7 @@ jobs:
           file: ./Containerfile
           push: true
           tags: |
-            ${{ env.GHCR_IMAGE }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ needs.build-and-push-quay.outputs.floating }}
             ${{ env.GHCR_IMAGE }}:${{ needs.build-and-push-quay.outputs.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

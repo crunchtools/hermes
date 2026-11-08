@@ -6,7 +6,75 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-08
+
 ### Security
+
+- **Five packages now pinned above upstream's `uv.lock`, and the base image's
+  `pip` bumped, to clear the 35 HIGH/CRITICAL findings that had stopped
+  `quay.io/crunchtools/hermes:latest` from publishing since 2026-10-17.** The
+  Kagetora seat on gloval ran that three-week-old image the whole time
+  (crunchtools/hermes#40). This repo's rule had been that `uv.lock` decides
+  every version and whatever CVEs that implies are reported, not fought;
+  upstream has shipped no tag that resolves clean, so the rule and a
+  publishable image were in direct conflict. Scott ruled on 2026-11-08:
+  upgrade it, do not accept it. The divergence is as narrow as the findings
+  allow and every pin is a build arg with its reasoning next to it in the
+  Containerfile.
+
+  | package | upstream locks | pinned | clears |
+  | --- | --- | --- | --- |
+  | `pillow` | 12.3.0 | 13.0.0 | 28 findings, 5 CRITICAL |
+  | `aiohttp` | 3.14.3 | 3.14.4 | 3 HIGH |
+  | `yarl` | 1.22.0 | 1.25.1 | nothing of its own — forced by aiohttp 3.14.4 |
+  | `PyJWT` | 2.13.0 | 2.14.0 | 1 HIGH, plus 6 already-accepted |
+  | `certifi` | 2026.5.20 | 2026.10.18 | 1 CRITICAL |
+  | `pip` (base image) | 26.2 | 26.3 | 1 CRITICAL, 2 HIGH, all vendored |
+
+  Pillow is where the weight is: heap buffer overflows in the TIFF, JPEG and
+  FlashPix decoders and argument injection into the Ghostscript call. It is
+  also reachable, measured rather than assumed — the gateway accepts inbound
+  image attachments, upstream's `tools/vision_tools.py` hands them to
+  `PIL.Image.open` through `_normalize_to_supported_image`, and this image
+  installs `--extra vision` on purpose. So the usual "not reachable behind
+  Trentina" argument does not apply to these; an image sent to Kagetora over
+  Matrix is attacker-controlled bytes going into a C decoder.
+
+  `pip` is the odd one out: it is the Hummingbird base image's, not upstream's
+  and not ours, which is why Trivy files its findings under the aggregate
+  "Python" target with no path and they look like they come from nowhere.
+  pip 26.2 vendors certifi 2026.6.17 and msgpack 1.1.2; 26.3 revendors
+  certifi 2026.10.23 and msgpack 1.2.4. Drop the bump when Hummingbird ships
+  pip >= 26.3.
+
+  The install uses `--no-deps` so it moves exactly these five versions and
+  nothing else. The cost is that nothing raises a dependency floor for us,
+  which is why `yarl` is on the list at all, so `tests/verify-pins.py` runs
+  after the install and asserts both the exact versions and every requirement
+  those packages declare — extras included, so `PyJWT[crypto]`'s own
+  `cryptography>=3.4.0` is checked too — against what is actually in the venv. A floor a
+  comment got wrong now fails the build rather than the container. Unlike
+  the `pypdf` pin below it needs no
+  `--exclude-newer-package`: every one of these versions is already older than
+  upstream's rolling 14-day quarantine and only gets older.
+
+  Each pin is to be **dropped, not bumped**, the moment upstream's `uv.lock`
+  reaches the same floor. Nothing watches them — `dependabot.yml` covers the
+  docker and github-actions ecosystems only, there being no language manifest
+  in this repo — so the next finding arrives as a red gate.
+
+- Seven `.trivyignore` entries deleted, because the upgrades fix them rather
+  than hide them: the six PyJWT 2.13.0 findings accepted in 1.0.2
+  (CVE-2026-102266, -102267, -102268 CRITICAL, -102271, -102272, -102273) and
+  one msgpack 1.1.2 finding (GHSA-6v7p-g79w-8964). The file's header now says
+  it is for findings no pin can reach, and names upgrading as the first
+  resort.
+
+  Still accepted, deliberately: `anyio` / `httpcore2` / `httpx2`, which the
+  `mcp` package pins upstream of upstream, and the two urllib3 2.7.0 findings.
+  Those were never blocking the gate, and widening the divergence to chase
+  them would have widened it without unblocking anything. `urllib3>=2.8.0` is
+  the obvious next candidate.
 
 - `pypdf` pinned to 6.21.4. Unpinned it resolved to 6.21.2, which carries
   CVE-2026-119203 through -119209 (seven HIGH findings, denial of service on
@@ -28,16 +96,26 @@ All notable changes to this project are documented here. The format follows
   by construction: the window is rolling, so from about 2026-11-11 the flag
   does nothing and the pin resolves on its own.
 
-  This does not turn the Trivy gate green. The blocking scan reports 42
-  HIGH/CRITICAL findings; the other 35 are upstream's `uv.lock` -- pillow
-  12.3.0 (28, five CRITICAL, fixed 13.0.0), aiohttp 3.14.3 (3, fixed 3.14.4),
-  certifi (1 CRITICAL, fixed 2026.10.18), PyJWT 2.13.0 (1, fixed 2.14.0),
-  msgpack 1.1.2 (1, fixed 1.2.3) -- and are reachable, so they need an
-  acceptance from Scott in `.trivyignore`'s own three-axis form, not an
-  ignore line written on his behalf. The gate has failed on every pull
-  request since 2026-10-21.
+  On its own this pin cleared seven of the 42 HIGH/CRITICAL findings the
+  blocking scan reported. The other 35 were upstream's `uv.lock` and the base
+  image's `pip`, and they are cleared by the pins above rather than by an
+  ignore line.
 
 ### Added
+- `scripts/floating-tag.sh` and `tests/test-floating-tag.sh`. The tag logic
+  was inline shell in the build workflow, which means it decided which image a
+  `podman-auto-update` host pulls and nothing could test it. Writing the tests
+  found a bug in the first draft: `refs/pull/N/head`, which
+  `pull_request_target` produces, yielded `pr-N/head` — a slash, so not a
+  legal OCI tag at all.
+- `tests/verify-pins.py`, run in the build after the diverged pins are
+  installed, and `tests/test-verify-pins.py`, run by `ci.yml` against
+  synthetic `.dist-info` trees. It asserts the exact versions and every
+  requirement the pinned packages declare, which is what makes `--no-deps`
+  safe to use. With the repo's first Python files come a `ruff-pre-commit`
+  hook and a `pyproject.toml` that holds nothing but `[tool.ruff]` — no
+  `[project]`, no `[build-system]`, no dependencies, so it is a linter config
+  and not a manifest.
 - A readiness line. `/usr/local/bin/hermes-entrypoint` starts the same
   `hermes gateway run` the image has always started, then polls the read-only
   `hermes cron list` until it answers and prints
@@ -85,9 +163,29 @@ All notable changes to this project are documented here. The format follows
   readiness probe. Each probe is bounded by whatever is left of
   `HERMES_READY_TIMEOUT` as well, so a slow probe cannot push the failure line
   past the timeout a watcher's window is set against.
-- A change under `rootfs/` now triggers the build workflow on a push to `main`.
-  It did not, because the `paths:` filter named only `Containerfile`,
-  `.trivyignore` and the workflow.
+- **`:latest` is now the newest stable release, not the newest build of the
+  default branch** (constitution 1.33.0). A merge to `main` moves `:main`, a
+  pull request moves `:pr-N`, a prerelease tag moves only itself, and only a
+  `vX.Y.Z` tag moves `:latest`. Each run moves exactly one floating tag,
+  computed in the version step, so no code path can move `:latest` by
+  accident. `latest` and `pr-*` are reserved names, and so is `main` for
+  anything that is not the default branch: `workflow_dispatch` runs from any
+  branch, so a branch called `latest` would otherwise have pushed an
+  unreleased build straight to the release tag. Prompted by RT#1559 in a
+  sibling repo: `:latest` tracking `main` put an unreleased build into
+  production through `podman-auto-update`.
+- **The build workflow's `paths:` filter is gone, and should not come back.**
+  It listed `Containerfile`, `rootfs/**`, `.trivyignore` and the workflow, on
+  the reasoning that nothing else can change the image. That is true of the
+  image content and false of the thing that matters: the filter also decides
+  whether a commit on `main` is built at all, so five merges in a row that
+  touched only docs, `CHANGELOG.md` or `.specify/` produced no build and no
+  push, and the head of the default branch had no image behind it for three
+  weeks. A doc-only rebuild costs five minutes of a runner; a default branch
+  whose head was never built costs a stale agent in production. GitHub does
+  not evaluate path filters on tag pushes, so only the branch half was ever
+  affected. (The earlier half-fix, adding `rootfs/**` to the filter, is
+  superseded by removing it.)
 - Corrected the README's Composition list, which still described a `pip`
   install from PyPI, a `HERMES_VERSION` build arg, a `python:latest` base and
   a healthcheck. None of those have been true since the image was built

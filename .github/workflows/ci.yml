@@ -1,13 +1,19 @@
-# The entrypoint's own tests.
+# The entrypoint's own tests, the floating-tag script's, and the pin
+# verifier's.
 #
 # They run the wrapper against a stand-in `hermes` on PATH (tests/stub-hermes),
 # so no gateway is ever started here: a second `hermes gateway run` logs in to
 # Matrix as the live agent and takes over its identity. Nothing in this
 # workflow may change that.
 #
-# Bash and nothing else. This repo is packaging only, so there is no Python
-# project to hang pytest on and no reason to add one for a shell script's
-# tests.
+# The two new scripts are here because both decide something that fails
+# quietly rather than loudly: scripts/floating-tag.sh picks which image a
+# podman-auto-update host pulls, and tests/verify-pins.py is the only thing
+# that notices a pin that did not land under `uv pip install --no-deps`.
+#
+# No pytest. This repo is packaging only, so there is no Python project to
+# hang a test runner on; both suites are run directly, one by bash and one by
+# python3. `packaging` is the only dependency, and verify-pins.py needs it too.
 #
 # No `paths:` filter: the tests are cheap and a change anywhere that breaks
 # them should fail the pull request.
@@ -24,8 +30,8 @@ permissions:
   contents: read
 
 jobs:
-  entrypoint:
-    name: Entrypoint tests
+  shell:
+    name: Shell tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -35,3 +41,21 @@ jobs:
 
       - name: Entrypoint tests
         run: bash tests/test-entrypoint.sh
+
+      - name: Floating tag tests
+        run: bash tests/test-floating-tag.sh
+
+  pins:
+    name: Pin verifier tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install packaging
+        run: python3 -m pip install --quiet --disable-pip-version-check packaging
+
+      - name: Pin verifier tests
+        run: python3 tests/test-verify-pins.py
