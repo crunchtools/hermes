@@ -96,15 +96,15 @@ run_entrypoint_with_args() {
   rc=$?
 }
 
-# --- the readiness line is printed once the scheduler answers ---------------
+# --- the readiness line is printed once the CLI answers --------------------
 #
 # The whole point of the line. Falsify by printing it before the poll loop:
 # the "gave up" assertions in the never-ready case below then fail.
-test_says_it_is_serving_once_cron_list_answers() {
+test_says_it_is_ready_once_cron_list_answers() {
   new_case
   touch "$stub_dir/cron-ok"
   run_entrypoint STUB_GATEWAY_LIFETIME=2 HERMES_READY_TIMEOUT=10
-  assert_contains "serving line is printed when cron list answers" "serving: cron list answered after"
+  assert_contains "the ready line is printed when cron list answers" "ready: cron list answered after"
   assert_absent "the success path does not also say it gave up" "gave up"
   assert_equal "the gateway's own exit status is the container's" "$rc" 0
 }
@@ -124,7 +124,7 @@ test_waits_for_a_scheduler_that_answers_late() {
   local marker=$!
   run_entrypoint STUB_GATEWAY_LIFETIME=6 HERMES_READY_TIMEOUT=20
   wait "$marker" 2>/dev/null
-  assert_contains "a late answer still produces the serving line" "serving: cron list answered after"
+  assert_contains "a late answer still produces the ready line" "ready: cron list answered after"
   assert_absent "a late answer is not reported as a failure" "gave up"
   assert_at_least "it polled more than once" "$(cron_calls)" 2
 }
@@ -138,13 +138,13 @@ test_waits_for_a_scheduler_that_answers_late() {
 test_gives_up_without_claiming_to_serve() {
   new_case
   run_entrypoint STUB_GATEWAY_LIFETIME=5 HERMES_READY_TIMEOUT=3
-  assert_contains "the failure line is printed" "gave up: cron list did not answer in"
-  # "NOT serving" would contain "serving", and a watcher told to wait for the
+  assert_contains "the failure line is printed" "gave up: no answer from cron list in"
+  # "NOT ready" would contain "ready", and a watcher told to wait for the
   # success line would be satisfied by the failure one.
-  assert_absent "the failure line shares no substring with the success line" "serving"
+  assert_absent "the failure line shares no substring with the success line" "ready"
   assert_at_least "it kept polling for the whole timeout" "$(cron_calls)" 3
   local waited
-  waited=$(printf '%s\n' "$out" | sed -n 's/.*did not answer in \([0-9]*\)s.*/\1/p')
+  waited=$(printf '%s\n' "$out" | sed -n 's/.*no answer from cron list in \([0-9]*\)s.*/\1/p')
   assert_at_least "the failure is reported after the timeout, not at once" "${waited:-0}" 2
 }
 
@@ -156,8 +156,8 @@ test_gives_up_without_claiming_to_serve() {
 test_a_dead_gateway_stops_the_wait_at_once() {
   new_case
   run_entrypoint STUB_GATEWAY_EXIT=9 HERMES_READY_TIMEOUT=60
-  assert_contains "a dead gateway is reported as a failure" "gave up: cron list did not answer in"
-  assert_absent "a dead gateway is never reported as serving" "serving"
+  assert_contains "a dead gateway is reported as a failure" "gave up: no answer from cron list in"
+  assert_absent "a dead gateway is never reported as ready" "ready"
   assert_equal "the gateway's exit status is still the container's" "$rc" 9
   assert_at_most "the wait ended at once rather than after the timeout" "$elapsed" 20
 }
@@ -204,7 +204,7 @@ test_arguments_are_appended_to_the_gateway() {
     argv=$(cat "$stub_dir/gateway-argv")
   fi
   assert_equal "arguments are appended to the gateway command" "$argv" "gateway run --verbose"
-  assert_contains "the readiness line is still printed" "serving: cron list answered after"
+  assert_contains "the readiness line is still printed" "ready: cron list answered after"
 }
 
 # --- the wait keeps to its timeout even when a probe is slow ---------------
@@ -217,9 +217,9 @@ test_a_slow_probe_does_not_outlast_the_timeout() {
   new_case
   run_entrypoint STUB_CRON_HANG=30 STUB_GATEWAY_LIFETIME=5 \
     HERMES_READY_TIMEOUT=4 HERMES_READY_PROBE_TIMEOUT=10
-  assert_contains "a hung probe still produces the failure line" "gave up: cron list did not answer in"
+  assert_contains "a hung probe still produces the failure line" "gave up: no answer from cron list in"
   local waited
-  waited=$(printf '%s\n' "$out" | sed -n 's/.*did not answer in \([0-9]*\)s.*/\1/p')
+  waited=$(printf '%s\n' "$out" | sed -n 's/.*no answer from cron list in \([0-9]*\)s.*/\1/p')
   assert_at_most "the reported wait is the timeout, not the probe timeout" "${waited:-99}" 6
   assert_at_most "the wait ended on its own timeout" "$elapsed" 8
 }
@@ -266,7 +266,7 @@ test_term_reaches_the_gateway() {
     bash "$entrypoint" > "$log" 2>&1 &
   local pid=$!
   local waited=0
-  while [ "$waited" -lt 15 ] && ! grep -q "serving:" "$log"; do
+  while [ "$waited" -lt 15 ] && ! grep -q "ready:" "$log"; do
     sleep 1
     waited=$((waited + 1))
   done
@@ -284,7 +284,7 @@ test_term_reaches_the_gateway() {
 bash -n "$entrypoint" || exit 2
 bash -n "$stub" || exit 2
 
-test_says_it_is_serving_once_cron_list_answers
+test_says_it_is_ready_once_cron_list_answers
 test_waits_for_a_scheduler_that_answers_late
 test_gives_up_without_claiming_to_serve
 test_a_dead_gateway_stops_the_wait_at_once

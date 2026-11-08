@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start the Hermes gateway, then say when it is actually serving.
+# Start the Hermes gateway, then say when it is answering rather than starting.
 #
 # The image's ENTRYPOINT used to be `hermes gateway run` itself, in exec form,
 # so any arguments the container was given were appended to it. That is still
@@ -34,10 +34,27 @@ trap 'stopping=1; kill "$hermes_pid" 2>/dev/null' TERM INT
 # the mistake the robot's readiness window exists to avoid, reintroduced from
 # this side.
 #
-# So this polls `hermes cron list` until it answers. That command is read-only
-# and it answers out of the scheduler the gateway runs, so a success means the
-# gateway came up far enough to serve. A sleep would only prove a process was
-# forked, which is the banner's claim again.
+# So this polls `hermes cron list` until it answers. That command is read-only.
+#
+# WHAT IT PROVES, AND WHAT IT DOES NOT. Read upstream before widening the
+# claim: hermes_cli/cron.py at v2026.9.24 serves `cron list` out of the local
+# jobs store and exits 0 whether or not the scheduler is ready -- it only
+# PRINTS a warning when it is not, and `_builtin_gateway_liveness()` treats a
+# gateway pid as alive, so there is no exit status here that distinguishes
+# "serving" from "forked". What an answer does prove is that the console
+# script in the shipped venv executes in THIS image, that HERMES_CONFIG_DIR is
+# readable and that the jobs store parses -- which is exactly how this image
+# has broken twice before (see the venv checks above), and all of it happens
+# after launch, where the banner happens before. So the line says the CLI
+# answered and claims nothing more. A sleep would prove only that a process
+# was forked, which is the banner's claim again.
+#
+# The one stronger local signal is the cron ticker's heartbeat, which
+# `hermes cron status` reports. It is not used here: its exit status is forced
+# to 0 upstream, so it would mean parsing third-party human-readable output,
+# and upstream's own advice is to "wait ~60s" for the first heartbeat, which
+# would put most of a deploy's readiness window into waiting. Left to the
+# robot's owner to decide (crunchtools/deployer#17).
 ready_timeout=${HERMES_READY_TIMEOUT:-120}
 probe_timeout=${HERMES_READY_PROBE_TIMEOUT:-10}
 
@@ -87,14 +104,14 @@ if [ -n "$probe_pid" ]; then
   kill "$probe_pid" 2>/dev/null || true
 fi
 
-# The two lines share no substring on purpose. "NOT serving" would contain
-# "serving", so a watcher told to wait for the success line would be satisfied
-# by the failure one -- a readiness check that cannot fail, which is worse than
-# no check because it gets trusted. Watch for "serving:".
+# The two lines share no substring on purpose. "NOT ready" would contain
+# "ready", so a watcher told to wait for the success line would be satisfied by
+# the failure one -- a readiness check that cannot fail, which is worse than no
+# check because it gets trusted. Watch for "ready:".
 if [ -n "$ready" ]; then
-  log "serving: cron list answered after ${SECONDS}s"
+  log "ready: cron list answered after ${SECONDS}s"
 else
-  log "gave up: cron list did not answer in ${SECONDS}s"
+  log "gave up: no answer from cron list in ${SECONDS}s"
 fi
 
 status=0

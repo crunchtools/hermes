@@ -79,9 +79,9 @@ Every model call still goes to Trentina, which holds the provider key.
 ## Layer 4 — Runtime Security & Behavioral Controls
 
 Entry point `/usr/local/bin/hermes-entrypoint`, which runs
-`hermes gateway run` unattended and prints one readiness line once the
-scheduler answers (see README, Readiness). Circuit breakers, rate limits and
-audit logging are Phase 2 and have no deployment values in this repo yet.
+`hermes gateway run` unattended and prints one readiness line once the agent's
+CLI answers `cron list` (see README, Readiness). Circuit breakers, rate limits
+and audit logging are Phase 2 and have no deployment values in this repo yet.
 
 ## Layer 5 — Credential & Identity Management
 

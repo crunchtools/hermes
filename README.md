@@ -47,17 +47,33 @@ that the container is running and the crunchtools deploy robot
 has to verify the service by waiting for a line in the container log.
 
 `/usr/local/bin/hermes-entrypoint` starts `hermes gateway run` and then polls
-the read-only `hermes cron list` until the scheduler answers:
+the read-only `hermes cron list` until it answers:
 
 | Line | Meaning |
 |---|---|
-| `hermes: serving: cron list answered after Ns` | the gateway is up and answering. **Watch for `serving:`.** |
-| `hermes: gave up: cron list did not answer in Ns` | it never answered inside the timeout, or the gateway died first |
+| `hermes: ready: cron list answered after Ns` | the agent's CLI answers in this container. **Watch for `ready:`.** |
+| `hermes: gave up: no answer from cron list in Ns` | it never answered inside the timeout, or the gateway died first |
 
 Hermes's own `☤ Hermes Gateway Starting...` banner is printed at launch, which
 is the wrong side of ready: a watcher waiting for it would call the container
 healthy while it was still coming up. The two lines above share no substring on
-purpose, so a watcher matching `serving:` cannot be satisfied by the failure.
+purpose, so a watcher matching `ready:` cannot be satisfied by the failure.
+
+### What `ready:` claims, and what it does not
+
+`cron list` is served from the local jobs store and exits 0 whether or not the
+scheduler is ready -- upstream's `hermes_cli/cron.py` only *prints* a warning
+when it is not, and its liveness probe counts a gateway pid as alive. So there
+is no exit status here that tells "serving" from "forked", and the line does
+not claim one.
+
+What an answer does prove is that the console script in the shipped venv
+executes in *this* image, that `HERMES_CONFIG_DIR` is readable and that the
+jobs store parses -- which is how this image has broken before, and all of it
+happens after launch where the banner happens before. The one stronger local
+signal is the cron ticker's heartbeat, which `hermes cron status` reports; it
+is not used here because its exit status is forced to 0 upstream and upstream's
+own advice is to wait ~60s for the first heartbeat.
 
 | Variable | Default | What |
 |---|---|---|

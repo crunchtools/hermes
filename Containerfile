@@ -86,7 +86,21 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
 
 # crunchtools addition upstream does not declare.
 # uv-created venvs ship no pip, so add it with uv rather than assuming one.
-RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /app/hermes/.venv/bin/python pypdf
+#
+# PINNED, and the pin is the fix for seven blocking Trivy findings, not
+# housekeeping. Unpinned it resolved to 6.21.2, which carries CVE-2026-119203
+# through -119209 (all HIGH, denial of service on crafted PDFs); 6.21.4 fixes
+# all seven. This is the one package in the image that is ours rather than
+# upstream's -- it is absent from hermes-agent's uv.lock -- so pinning it is
+# not a version override of upstream's resolution and the "uv.lock decides
+# everything" rule above does not cover it.
+#
+# Nothing watches this automatically: dependabot.yml tracks the docker and
+# github-actions ecosystems only, there being no language manifest here. Bump
+# it by hand when Trivy reports the next one.
+ARG PYPDF_VERSION=6.21.4
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /app/hermes/.venv/bin/python \
+        "pypdf==${PYPDF_VERSION}"
 
 # Report what actually landed, and fail the build if the pieces Kagetora cannot
 # run without are missing.
