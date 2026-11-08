@@ -147,6 +147,9 @@ All notable changes to this project are documented here. The format follows
   falling back.
 
 ### Fixed
+- The image carries a `version` label (1.0.2). The release sweep moves the
+  version in tracked files, and with none stating it outside the changelog it
+  refused to cut this repository's next release.
 - Base image back to Hummingbird Python 3.13: hermes-agent requires
   Python <3.14, so the 3.14 bump (#14) broke the image build. Dependabot now
   skips Python 3.14+ until upstream supports it.
