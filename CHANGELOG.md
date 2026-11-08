@@ -15,6 +15,17 @@ All notable changes to this project are documented here. The format follows
   of upstream's resolution. Nothing watches it automatically:
   `dependabot.yml` tracks the docker and github-actions ecosystems only.
 
+  The pin needs `uv pip install --exclude-newer-package pypdf=false`. The
+  install resolves inside upstream's project, whose `[tool.uv]` sets
+  `exclude-newer = "14 days"`, a rolling supply-chain quarantine; 6.21.4 was
+  published 2026-10-28, so without the exception the fix cannot be resolved
+  for fourteen days and the build fails in resolution rather than at the
+  gate. The quarantine is lifted for `pypdf` alone and the global cutoff is
+  untouched, because moving it would silently re-resolve upstream's whole
+  closure. Upstream's own `[tool.uv.exclude-newer-package]` table does the
+  same for dozens of packages, on the reasoning that an exact pin gains
+  nothing from a quarantine it cannot float past.
+
   This does not turn the Trivy gate green. The blocking scan reports 42
   HIGH/CRITICAL findings; the other 35 are upstream's `uv.lock` -- pillow
   12.3.0 (28, five CRITICAL, fixed 13.0.0), aiohttp 3.14.3 (3, fixed 3.14.4),

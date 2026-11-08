@@ -98,8 +98,35 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
 # Nothing watches this automatically: dependabot.yml tracks the docker and
 # github-actions ecosystems only, there being no language manifest here. Bump
 # it by hand when Trivy reports the next one.
+#
+# --exclude-newer-package IS THE POINT OF THIS LINE, so read before removing
+# it. This install resolves inside /app/hermes, so it inherits upstream's
+# [tool.uv] from their pyproject.toml, and that holds
+# `exclude-newer = "14 days"`: a ROLLING supply-chain quarantine on every
+# package the resolver can see. 6.21.4 was published 2026-10-28 and the fix
+# therefore cannot be resolved at all for fourteen days after that -- the
+# reproducibility control and the CVE fix are in direct conflict, and without
+# this flag the build fails in resolution rather than at the Trivy gate.
+#
+# So the quarantine is lifted for pypdf and for nothing else. The global
+# cutoff is deliberately untouched: moving it forward would silently
+# re-resolve upstream's entire closure for the sake of one package's CVE set.
+# This is upstream's own remedy, not an invention -- their
+# [tool.uv.exclude-newer-package] table exempts dozens of packages on the
+# reasoning that an exact pin gains nothing from the quarantine, because the
+# version cannot float without a reviewed bump, while the cutoff can still
+# brick the install. `pypdf==` is an exact pin, and the bump was the review.
+#
+# What it buys: CVE-2026-119203, -119204, -119205 (fixed in 6.21.4) and
+# -119206 through -119209 (fixed in 6.21.3). Seven HIGH findings in all.
+#
+# The comment lives here because it cannot live next to the cutoff: that is a
+# line in a third-party pyproject.toml cloned at build time, and this is the
+# place a reader of THIS repo meets it.
 ARG PYPDF_VERSION=6.21.4
-RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /app/hermes/.venv/bin/python \
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir \
+        --exclude-newer-package "pypdf=false" \
+        --python /app/hermes/.venv/bin/python \
         "pypdf==${PYPDF_VERSION}"
 
 # Report what actually landed, and fail the build if the pieces Kagetora cannot
