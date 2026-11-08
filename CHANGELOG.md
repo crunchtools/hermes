@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The image carries a `version` label (1.1.0). The release sweep moves the
+  version in tracked files, and with none stating it outside the changelog it
+  refused to cut this repository's next release.
+
 ## [1.1.0] - 2026-11-08
 
 ### Security
