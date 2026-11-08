@@ -1,0 +1,36 @@
+# The entrypoint's own tests.
+#
+# They run the wrapper against a stand-in `hermes` on PATH (tests/stub-hermes),
+# so no gateway is ever started here: a second `hermes gateway run` logs in to
+# Matrix as the live agent and takes over its identity. Nothing in this
+# workflow may change that.
+#
+# Bash and nothing else. This repo is packaging only, so there is no Python
+# project to hang pytest on and no reason to add one for eight test cases.
+#
+# No `paths:` filter: the tests are cheap and a change anywhere that breaks
+# them should fail the pull request.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  entrypoint:
+    name: Entrypoint tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Entrypoint tests
+        run: bash tests/test-entrypoint.sh

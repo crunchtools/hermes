@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- A readiness line. `/usr/local/bin/hermes-entrypoint` starts the same
+  `hermes gateway run` the image has always started, then polls the read-only
+  `hermes cron list` until the scheduler answers and prints
+  `hermes: serving: cron list answered after Ns`. If it never answers within
+  `HERMES_READY_TIMEOUT` (default 120s) it prints
+  `hermes: gave up: cron list did not answer in Ns` instead, and it stops
+  waiting at once if the gateway has already died. The two lines share no
+  substring, so a watcher matching `serving:` cannot be satisfied by the
+  failure. This container exposes no port, so that line is the only signal
+  the crunchtools deploy robot (crunchtools/deployer#17) can verify the
+  service by; the banner Hermes prints is printed at launch, which is the
+  wrong side of ready. Refs crunchtools/deployer#17.
+- `tests/test-entrypoint.sh`, run by a new `CI` workflow. It exercises the
+  entrypoint against a stand-in `hermes` on `PATH`, so no gateway is started:
+  ready, ready-late, never-ready, dead-gateway, exit status, TERM forwarding
+  and stdin.
 - The `anthropic` extra (upstream's pin, `anthropic==0.87.0`). Kagetora moves
   to Claude on the `anthropic_messages` wire through Trentina's
   `/llm/anthropic`, and without the SDK Hermes refuses the request instead of
@@ -19,6 +35,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `ENTRYPOINT` is `/usr/local/bin/hermes-entrypoint` rather than
+  `hermes gateway run` directly. The wrapper runs `hermes gateway run "$@"`, so
+  a container's arguments are still appended to the gateway command as the
+  exec-form `ENTRYPOINT` appended them; the gateway still gets the container's
+  stdin and the runtime's TERM/INT, and the container still ends with the
+  gateway's own exit status.
+- `timeout` added to the coreutils symlinks, so the entrypoint can bound each
+  readiness probe. Each probe is bounded by whatever is left of
+  `HERMES_READY_TIMEOUT` as well, so a slow probe cannot push the failure line
+  past the timeout a watcher's window is set against.
+- A change under `rootfs/` now triggers the build workflow on a push to `main`.
+  It did not, because the `paths:` filter named only `Containerfile`,
+  `.trivyignore` and the workflow.
+- Corrected the README's Composition list, which still described a `pip`
+  install from PyPI, a `HERMES_VERSION` build arg, a `python:latest` base and
+  a healthcheck. None of those have been true since the image was built
+  upstream's way; there is no `HEALTHCHECK` at all.
 - Added a v1.18.0 manifest constitution at `.specify/memory/constitution.md`.
 - Constitution validation is pinned to the inherited release via
   `.github/workflows/constitution.yml`.

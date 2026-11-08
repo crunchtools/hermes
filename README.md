@@ -39,13 +39,57 @@ podman run -d --name hermes.crunchtools.com \
   quay.io/crunchtools/hermes
 ```
 
+## Readiness
+
+The container exposes no port on the hosts that run it, so Nagios can only say
+that the container is running and the crunchtools deploy robot
+([crunchtools/deployer#17](https://github.com/crunchtools/deployer/issues/17))
+has to verify the service by waiting for a line in the container log.
+
+`/usr/local/bin/hermes-entrypoint` starts `hermes gateway run` and then polls
+the read-only `hermes cron list` until the scheduler answers:
+
+| Line | Meaning |
+|---|---|
+| `hermes: serving: cron list answered after Ns` | the gateway is up and answering. **Watch for `serving:`.** |
+| `hermes: gave up: cron list did not answer in Ns` | it never answered inside the timeout, or the gateway died first |
+
+Hermes's own `☤ Hermes Gateway Starting...` banner is printed at launch, which
+is the wrong side of ready: a watcher waiting for it would call the container
+healthy while it was still coming up. The two lines above share no substring on
+purpose, so a watcher matching `serving:` cannot be satisfied by the failure.
+
+| Variable | Default | What |
+|---|---|---|
+| `HERMES_READY_TIMEOUT` | `120` | seconds to wait for the scheduler before giving up |
+| `HERMES_READY_PROBE_TIMEOUT` | `10` | seconds any one `cron list` probe may take |
+
+Arguments given to the container are appended to `hermes gateway run`, which is
+what the old exec-form `ENTRYPOINT` did with them, so a unit file that passes
+gateway flags keeps working. To run something else in the image, override the
+entrypoint:
+
+```bash
+podman run --rm --entrypoint hermes ... quay.io/crunchtools/hermes cron list
+```
+
+The entrypoint's tests (`tests/test-entrypoint.sh`, run by the `CI` workflow)
+drive it against a stand-in `hermes` on `PATH`. Nothing in this repo starts a
+real gateway: a second `hermes gateway run` logs in to Matrix as the live agent
+and takes over its identity.
+
 ## Composition
 
-- Base: `quay.io/hummingbird/python:latest` (per profile §III base image requirements)
-- `hermes-agent` installed via `pip` from PyPI, pinned version (`HERMES_VERSION` build arg)
+- Base: `quay.io/hummingbird/python:3.13` (per profile §III base image requirements).
+  Not 3.14: hermes-agent requires Python <3.14
+- `hermes-agent` installed the way upstream installs it, from a shallow git
+  clone at a pinned tag (`HERMES_REF` build arg) with `uv sync --frozen` and
+  an editable `uv pip install --no-deps`. Upstream publishes no usable PyPI
+  release and blocks wheel builds from source
 - `signal-cli` native binary baked in for Signal channel (`SIGNAL_CLI_VERSION` build arg)
 - Multi-stage build; runtime image carries no build tools or package manager
-- Healthcheck via `hermes doctor --json`
+- No `HEALTHCHECK`: the container exposes no port on the hosts that run it, so
+  readiness is the log line above rather than a probe
 
 ## Why no `schedule:` trigger
 

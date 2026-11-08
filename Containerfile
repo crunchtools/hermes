@@ -177,8 +177,18 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 # USER 0 first because the Hummingbird python:3.13 base defaults to UID 65532
 # which can't write into /bin or /usr/bin. Switch back to that default after.
 USER 0
-RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
+RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname timeout'.split()]"]
 
+
+# The entrypoint wrapper. It starts the same `hermes gateway run` this image
+# has always started and adds one readiness line, because this container
+# exposes no port and the deploy robot can only verify it by waiting for a
+# line in the log. `timeout` is in the coreutils list above for it: it bounds
+# each readiness probe. See rootfs/usr/local/bin/hermes-entrypoint.
+COPY rootfs/ /
+RUN chmod 0755 /usr/local/bin/hermes-entrypoint && \
+    bash -n /usr/local/bin/hermes-entrypoint && \
+    timeout --help > /dev/null
 
 # Prove the shipped venv actually executes in THIS image. The builder-stage
 # check passed while the runtime image was broken, twice: once on a stale
@@ -198,4 +208,8 @@ EXPOSE 18790
 
 # Start the messaging gateway in unattended mode. Signal channel + bot
 # pairing is configured via files under /app/.hermes (bind-mounted).
-ENTRYPOINT ["hermes", "gateway", "run"]
+#
+# The wrapper runs `hermes gateway run "$@"`, so a container's arguments are
+# appended to the gateway command exactly as the old exec-form ENTRYPOINT
+# appended them. Overriding --entrypoint is how you run anything else.
+ENTRYPOINT ["/usr/local/bin/hermes-entrypoint"]
