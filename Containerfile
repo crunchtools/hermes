@@ -43,7 +43,15 @@ WORKDIR /build
 # No version overrides, no forced upgrades, no dependency pinning of our own.
 # uv.lock decides everything; whatever CVEs that implies are reported, not
 # fought. That is the point of building it their way.
-ARG HERMES_REF=v2026.9.24
+#
+# HERMES_REF is a commit on upstream main, not a release tag. The newest tag,
+# v2026.9.24, locks Pillow 12.3.0 (28 findings, 5 CRITICAL), PyJWT 2.13.0,
+# certifi 2026.5.20 and aiohttp 3.14.3, and upstream has cut no tag since.
+# Their main moved those pins (Pillow 13.0.0, PyJWT 2.15.1, certifi
+# 2026.10.19, aiohttp 3.14.5) in their own pyproject and uv.lock, so this is
+# still their lock, unmodified -- just a newer one. Move back to a v2026.*
+# tag as soon as upstream cuts one at or past this commit (hermes#38).
+ARG HERMES_REF=ee6db222660c84e4ba2cf158108f0e6fed9afe34
 
 # Extras for the Kagetora personal-assistant deployment. vision, cron and pty
 # carry zero dependencies -- image recognition is a feature flag over core
@@ -72,8 +80,12 @@ ENV UV_PYTHON_DOWNLOADS=never \
 
 RUN python3.13 -m venv /opt/uvenv && /opt/uvenv/bin/pip install --no-cache-dir uv
 
-RUN git clone --depth 1 --branch "${HERMES_REF}" \
-        https://github.com/NousResearch/hermes-agent.git /app/hermes
+# Fetch by ref rather than `git clone --branch`, which accepts tags and
+# branches but not a commit SHA. Works for either.
+RUN git init -q /app/hermes && cd /app/hermes && \
+    git remote add origin https://github.com/NousResearch/hermes-agent.git && \
+    git fetch -q --depth 1 origin "${HERMES_REF}" && \
+    git checkout -q FETCH_HEAD
 
 WORKDIR /app/hermes
 # Step 1: dependency closure straight from uv.lock. --frozen uses the lockfile
