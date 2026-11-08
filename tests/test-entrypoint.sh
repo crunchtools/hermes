@@ -129,13 +129,13 @@ test_waits_for_a_scheduler_that_answers_late() {
   assert_at_least "it polled more than once" "$(cron_calls)" 2
 }
 
-# --- and it gives up without ever claiming to serve ------------------------
+# --- and it gives up without ever claiming to be ready --------------------
 #
 # The two assertions are separate claims. The first is that the failure line
 # appears; the second is that the WAITING happened, which is what a test on the
 # final check alone would miss. Falsify by deleting the poll loop: the call
 # count drops to 1 and the reported wait to 0s, and both fail.
-test_gives_up_without_claiming_to_serve() {
+test_gives_up_without_claiming_to_be_ready() {
   new_case
   run_entrypoint STUB_GATEWAY_LIFETIME=5 HERMES_READY_TIMEOUT=3
   assert_contains "the failure line is printed" "gave up: no answer from cron list in"
@@ -286,7 +286,7 @@ bash -n "$stub" || exit 2
 
 test_says_it_is_ready_once_cron_list_answers
 test_waits_for_a_scheduler_that_answers_late
-test_gives_up_without_claiming_to_serve
+test_gives_up_without_claiming_to_be_ready
 test_a_dead_gateway_stops_the_wait_at_once
 test_the_gateway_output_still_reaches_the_log
 test_the_gateway_keeps_the_containers_stdin
