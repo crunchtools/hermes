@@ -1,0 +1,55 @@
+#!/bin/bash
+# Stand-in for the hermes CLI, for tests/test-entrypoint.sh.
+#
+# Nothing here starts a real gateway, and nothing here may ever be allowed to:
+# a second `hermes gateway run` logs in to Matrix as the live agent and takes
+# over its identity. This answers the two commands the entrypoint uses and
+# refuses everything else.
+#
+# $STUB_DIR holds the controls:
+#   cron-ok               present => `cron list` succeeds
+#   cron-calls            appended to on every `cron list`, one line per call
+#   gateway-argv          the arguments the fake gateway was started with
+#   got-term              written when the fake gateway is sent TERM
+#   stdin-line            the first line the fake gateway read, if asked to read
+#   $STUB_GATEWAY_EXIT    set => the fake gateway exits with it at once
+#   $STUB_GATEWAY_LIFETIME seconds the fake gateway stays up (default 30)
+#   $STUB_READ_STDIN      set => the fake gateway reads one line of stdin
+#   $STUB_CRON_HANG       seconds `cron list` hangs before failing
+set -uo pipefail
+
+case "$*" in
+  "gateway run" | "gateway run "*)
+    printf '%s\n' "$*" > "$STUB_DIR/gateway-argv"
+    # The banner Hermes really prints, and the reason this repo needs a
+    # readiness line: it is printed at launch, not when the gateway serves.
+    echo "┌─────────────────────────────────────────────────────────┐"
+    echo "│           ☤ Hermes Gateway Starting...                 │"
+    if [ -n "${STUB_READ_STDIN:-}" ]; then
+      line=
+      read -r line
+      printf '%s\n' "$line" > "$STUB_DIR/stdin-line"
+    fi
+    if [ -n "${STUB_GATEWAY_EXIT:-}" ]; then
+      exit "$STUB_GATEWAY_EXIT"
+    fi
+    trap 'touch "$STUB_DIR/got-term"; exit 143' TERM
+    # Backgrounded so the trap runs while this waits, rather than after a
+    # foreground sleep has finished.
+    sleep "${STUB_GATEWAY_LIFETIME:-30}" &
+    wait $!
+    exit 0
+    ;;
+  "cron list")
+    echo "called" >> "$STUB_DIR/cron-calls"
+    if [ -n "${STUB_CRON_HANG:-}" ]; then
+      sleep "$STUB_CRON_HANG"
+    fi
+    [ -f "$STUB_DIR/cron-ok" ] || exit 1
+    echo "no jobs scheduled"
+    ;;
+  *)
+    echo "stub-hermes: refusing an invocation the entrypoint should not make: $*" >&2
+    exit 64
+    ;;
+esac

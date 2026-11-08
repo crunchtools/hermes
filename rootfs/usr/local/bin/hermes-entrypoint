@@ -1,0 +1,125 @@
+#!/bin/bash
+# Start the Hermes gateway, then say when it is answering rather than starting.
+#
+# The image's ENTRYPOINT used to be `hermes gateway run` itself, in exec form,
+# so any arguments the container was given were appended to it. That is still
+# exactly what runs, arguments and all, and this wrapper keeps what came with
+# being exec'd: the container ends when the gateway ends, with the gateway's
+# exit status, the gateway keeps the container's stdin, and TERM/INT still
+# reach it. What it adds is the one readiness line at the end -- see the
+# comment there for why the banner Hermes prints at launch cannot be used.
+set -euo pipefail
+
+log() { echo "hermes: $*" >&2; }
+
+# <&0 is not decoration. Bash redirects an asynchronous command's standard
+# input from /dev/null unless a redirection is explicit, and the old
+# ENTRYPOINT was exec'd, so it had the container's stdin. This keeps it.
+hermes gateway run "$@" <&0 &
+hermes_pid=$!
+# The gateway was PID 1 before and is a child now, so the signals a container
+# runtime sends PID 1 have to be passed on by hand. `stopping` is what the
+# readiness wait below reads to tell a stop from a failed probe.
+stopping=
+trap 'stopping=1; kill "$hermes_pid" 2>/dev/null' TERM INT
+
+# A READINESS LINE, AND DELIBERATELY NOT A BANNER.
+#
+# kagetora.crunchtools.com runs this image and exposes no port, so Nagios can
+# only say "the container is running", and the deploy robot
+# (crunchtools/deployer#17) has to verify the service by waiting for a line in
+# this log. The only startup line Hermes prints on its own is its banner, and
+# that is printed at launch -- the wrong side of ready. A watcher waiting for
+# it would report the container healthy while it was still coming up, which is
+# the mistake the robot's readiness window exists to avoid, reintroduced from
+# this side.
+#
+# So this polls `hermes cron list` until it answers. That command is read-only.
+#
+# WHAT IT PROVES, AND WHAT IT DOES NOT. Read upstream before widening the
+# claim: hermes_cli/cron.py at v2026.9.24 serves `cron list` out of the local
+# jobs store and exits 0 whether or not the scheduler is ready -- it only
+# PRINTS a warning when it is not, and `_builtin_gateway_liveness()` treats a
+# gateway pid as alive, so there is no exit status here that distinguishes
+# "serving" from "forked". What an answer does prove is that the console
+# script in the shipped venv executes in THIS image, that HERMES_CONFIG_DIR is
+# readable and that the jobs store parses -- which is exactly how this image
+# has broken twice before (see the venv checks above), and all of it happens
+# after launch, where the banner happens before. So the line says the CLI
+# answered and claims nothing more. A sleep would prove only that a process
+# was forked, which is the banner's claim again.
+#
+# The one stronger local signal is the cron ticker's heartbeat, which
+# `hermes cron status` reports. It is not used here: its exit status is forced
+# to 0 upstream, so it would mean parsing third-party human-readable output,
+# and upstream's own advice is to "wait ~60s" for the first heartbeat, which
+# would put most of a deploy's readiness window into waiting. Left to the
+# robot's owner to decide (crunchtools/deployer#17).
+ready_timeout=${HERMES_READY_TIMEOUT:-120}
+probe_timeout=${HERMES_READY_PROBE_TIMEOUT:-10}
+
+# `timeout` bounds one probe. Without it in the image a probe that never
+# returns would hold the wait open past HERMES_READY_TIMEOUT and neither line
+# below would ever be printed, so say which of the two is in force.
+if command -v timeout > /dev/null 2>&1; then
+  probe() { timeout "$1" hermes cron list > /dev/null 2>&1; }
+else
+  log "no timeout in this image, so each readiness probe is unbounded"
+  probe() { hermes cron list > /dev/null 2>&1; }
+fi
+
+ready=
+probe_pid=
+SECONDS=0
+while [ "$SECONDS" -lt "$ready_timeout" ]; do
+  # Each probe is bounded by whatever is left of the wait as well as by
+  # probe_timeout, so a slow probe cannot push the failure line out past the
+  # timeout the robot's readiness window is set against.
+  limit=$((ready_timeout - SECONDS))
+  if [ "$probe_timeout" -lt "$limit" ]; then
+    limit=$probe_timeout
+  fi
+  # Backgrounded and waited for rather than run in the foreground: bash holds
+  # a trap until a foreground command returns, so a slow probe would sit on
+  # the TERM the gateway is owed and eat its shutdown grace period.
+  probe "$limit" &
+  probe_pid=$!
+  if wait "$probe_pid"; then
+    ready=1
+    break
+  fi
+  # A stop is not a failed probe. Without this the loop would read the
+  # interrupted wait as "not ready yet" and keep polling a gateway that has
+  # already been told to go.
+  [ -z "$stopping" ] || break
+  # Stop as soon as the gateway is gone. Without this the loop sits out the
+  # whole timeout waiting for an answer that cannot come, turning a fast, clear
+  # failure into a slow, silent one.
+  kill -0 "$hermes_pid" 2>/dev/null || break
+  sleep 1
+done
+# A probe still running would otherwise be picked up by the final `wait`, which
+# for an unbounded one means waiting on it forever.
+if [ -n "$probe_pid" ]; then
+  kill "$probe_pid" 2>/dev/null || true
+fi
+
+# The two lines share no substring on purpose. "NOT ready" would contain
+# "ready", so a watcher told to wait for the success line would be satisfied by
+# the failure one -- a readiness check that cannot fail, which is worse than no
+# check because it gets trusted. Watch for "ready:".
+if [ -n "$ready" ]; then
+  log "ready: cron list answered after ${SECONDS}s"
+else
+  log "gave up: no answer from cron list in ${SECONDS}s"
+fi
+
+status=0
+wait "$hermes_pid" || status=$?
+log "the gateway ended (status $status), stopping"
+# A signal interrupts the wait above before the gateway has gone. The trap has
+# already sent it a TERM; this reaps it rather than ending the container while
+# it is still shutting down.
+kill "$hermes_pid" 2>/dev/null || true
+wait || true
+exit "$status"

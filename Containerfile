@@ -86,7 +86,54 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
 
 # crunchtools addition upstream does not declare.
 # uv-created venvs ship no pip, so add it with uv rather than assuming one.
-RUN /opt/uvenv/bin/uv pip install --no-cache-dir --python /app/hermes/.venv/bin/python pypdf
+#
+# PINNED, and the pin is the fix for seven blocking Trivy findings, not
+# housekeeping. Unpinned it resolved to 6.21.2, which carries CVE-2026-119203
+# through -119209 (all HIGH, denial of service on crafted PDFs); 6.21.4 fixes
+# all seven. This is the one package in the image that is ours rather than
+# upstream's -- it is absent from hermes-agent's uv.lock -- so pinning it is
+# not a version override of upstream's resolution and the "uv.lock decides
+# everything" rule above does not cover it.
+#
+# Nothing watches this automatically: dependabot.yml tracks the docker and
+# github-actions ecosystems only, there being no language manifest here. Bump
+# it by hand when Trivy reports the next one.
+#
+# --exclude-newer-package IS THE POINT OF THIS LINE, so read before removing
+# it. This install resolves inside /app/hermes, so it inherits upstream's
+# [tool.uv] from their pyproject.toml, and that holds
+# `exclude-newer = "14 days"`: a ROLLING supply-chain quarantine on every
+# package the resolver can see. 6.21.4 was published 2026-10-28 and the fix
+# therefore cannot be resolved at all for fourteen days after that -- the
+# reproducibility control and the CVE fix are in direct conflict, and without
+# this flag the build fails in resolution rather than at the Trivy gate.
+#
+# So the quarantine is lifted for pypdf and for nothing else. The global
+# cutoff is deliberately untouched: moving it forward would silently
+# re-resolve upstream's entire closure for the sake of one package's CVE set.
+# This is upstream's own remedy, not an invention -- their
+# [tool.uv.exclude-newer-package] table exempts dozens of packages on the
+# reasoning that an exact pin gains nothing from the quarantine, because the
+# version cannot float without a reviewed bump, while the cutoff can still
+# brick the install. `pypdf==` is an exact pin, and the bump was the review.
+#
+# What it buys: CVE-2026-119203, -119204, -119205 (fixed in 6.21.4) and
+# -119206 through -119209 (fixed in 6.21.3). Seven HIGH findings in all.
+#
+# The exemption is TEMPORARY BY CONSTRUCTION and is not a standing opt-out.
+# The window is rolling, so once 6.21.4 is more than fourteen days old -- from
+# about 2026-11-11 -- the flag stops doing anything and the pin resolves on its
+# own. It earns its keep again only at the next bump, and at that bump the same
+# reasoning has to be made again rather than inherited.
+#
+# The comment lives here because it cannot live next to the cutoff: that is a
+# line in a third-party pyproject.toml cloned at build time, and this is the
+# place a reader of THIS repo meets it.
+ARG PYPDF_VERSION=6.21.4
+RUN /opt/uvenv/bin/uv pip install --no-cache-dir \
+        --exclude-newer-package "pypdf=false" \
+        --python /app/hermes/.venv/bin/python \
+        "pypdf==${PYPDF_VERSION}"
 
 # Report what actually landed, and fail the build if the pieces Kagetora cannot
 # run without are missing.
@@ -177,8 +224,18 @@ COPY --from=builder /usr/lib64/libacl.so.* /usr/lib64/libattr.so.* /usr/lib64/
 # USER 0 first because the Hummingbird python:3.13 base defaults to UID 65532
 # which can't write into /bin or /usr/bin. Switch back to that default after.
 USER 0
-RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname'.split()]"]
+RUN ["/usr/sbin/python3.13", "-c", "import os; os.makedirs('/bin', exist_ok=True); [os.path.exists(p) or os.symlink('/usr/bin/bash', p) for p in ('/bin/sh','/bin/bash')]; [os.path.exists('/usr/bin/'+c) or os.symlink('/usr/bin/coreutils', '/usr/bin/'+c) for c in 'cat echo ls cp mv rm ln chmod chown mkdir rmdir grep head tail wc pwd whoami env id date sleep test true false dirname basename realpath readlink stat printf seq sort uniq tr cut tee touch uname arch hostname timeout'.split()]"]
 
+
+# The entrypoint wrapper. It starts the same `hermes gateway run` this image
+# has always started and adds one readiness line, because this container
+# exposes no port and the deploy robot can only verify it by waiting for a
+# line in the log. `timeout` is in the coreutils list above for it: it bounds
+# each readiness probe. See rootfs/usr/local/bin/hermes-entrypoint.
+COPY rootfs/ /
+RUN chmod 0755 /usr/local/bin/hermes-entrypoint && \
+    bash -n /usr/local/bin/hermes-entrypoint && \
+    timeout --help > /dev/null
 
 # Prove the shipped venv actually executes in THIS image. The builder-stage
 # check passed while the runtime image was broken, twice: once on a stale
@@ -198,4 +255,8 @@ EXPOSE 18790
 
 # Start the messaging gateway in unattended mode. Signal channel + bot
 # pairing is configured via files under /app/.hermes (bind-mounted).
-ENTRYPOINT ["hermes", "gateway", "run"]
+#
+# The wrapper runs `hermes gateway run "$@"`, so a container's arguments are
+# appended to the gateway command exactly as the old exec-form ENTRYPOINT
+# appended them. Overriding --entrypoint is how you run anything else.
+ENTRYPOINT ["/usr/local/bin/hermes-entrypoint"]
