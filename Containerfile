@@ -161,6 +161,8 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir \
 #     extra depends on it, and both findings are server-side; whether Hermes
 #     ever listens with it was not established. Bumped anyway because the fix
 #     is a patch release and establishing it is more work than taking it.
+#     THIS ONE ALSO MOVES A RUNTIME GATE, see the reconciliation step below:
+#     upstream declares aiohttp==3.14.3 in LAZY_DEPS and checks it at start.
 #   yarl    1.22.0    -> 1.25.1      no findings of its own, so reachability
 #     does not arise. FORCED: aiohttp 3.14.4 requires yarl>=1.25.1 and
 #     upstream locks 1.22.0. Named here so the version is reviewed rather
@@ -195,6 +197,12 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir \
 # 2026-09-11, certifi 2026.10.18 2026-10-18. They only get older, so the
 # quarantine never blocks these pins and no exemption is owed.
 #
+# A VERSION IS NOT THE ONLY THING A BUMP MOVES. Upstream reads installed
+# versions back at runtime through tools/lazy_deps.py and gates whole features
+# on them, so a pin here can take a platform offline while every import still
+# works. That is what v1.1.0 did to Matrix. The reconciliation step below and
+# `verify-pins.py --lazy-deps` exist for it; a new pin must pass both.
+#
 # Nothing watches these. dependabot.yml covers the docker and github-actions
 # ecosystems only, there being no language manifest in this repo, so the next
 # finding arrives as a red gate. Each pin is to be DROPPED, not bumped, the
@@ -218,6 +226,43 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
         "PyJWT[crypto]==${PYJWT_VERSION}" \
         "certifi==${CERTIFI_VERSION}"
 
+# Reconcile upstream's OWN declared pins with what we just installed.
+#
+# This is the v1.1.1 fix and it is not cosmetic. hermes-agent's
+# tools/lazy_deps.py holds a LAZY_DEPS table of exact pins, and
+# is_available(feature) compares the INSTALLED version against them. A
+# platform's registry check_fn is that call, so a feature whose declared
+# version does not match what is installed reports itself unavailable and its
+# adapter is never created. v1.1.0 shipped aiohttp 3.14.4 over upstream's
+# declared aiohttp==3.14.3 and Kagetora came up with no Matrix channel at all
+# -- "Platform 'Matrix' requirements not met", Nagios CRITICAL. Nothing was
+# actually broken; the gate is a string comparison, not an import.
+#
+# Upstream's pins are FLOORS by their own account -- LAZY_DEPS calls them
+# "shared patched floors" and their pyproject's matrix extra says "aiohttp
+# 3.14.3: prior CVEs + ... (mautrix/aiohttp-socks only cap aiohttp<4 / >=3.10,
+# so pin the patched floor directly)". Measured in the shipped image rather
+# than assumed: mautrix 0.21.1 wants aiohttp<4,>=3 and yarl<2,>=1.5,
+# aiohttp-socks 0.11.0 wants aiohttp>=3.10.0, and both import against 3.14.4
+# and yarl 1.25.1.
+#
+# So this rewrites the version inside those literals, for exactly the packages
+# the block above moved and nothing else. The rejected alternative was to
+# revert aiohttp to 3.14.3 and add three .trivyignore entries for its HIGHs:
+# that trades a correct table for a silenced scanner, and it would have left
+# tool.vision ('Pillow==12.3.0' against the shipped 13.0.0) broken in the same
+# way, which the reconciliation fixes in the same pass.
+COPY scripts/reconcile-lazy-deps.py /tmp/reconcile-lazy-deps.py
+RUN /app/hermes/.venv/bin/python /tmp/reconcile-lazy-deps.py \
+        /app/hermes/tools/lazy_deps.py \
+        "pillow==${PILLOW_VERSION}" \
+        "aiohttp==${AIOHTTP_VERSION}" \
+        "yarl==${YARL_VERSION}" \
+        "PyJWT[crypto]==${PYJWT_VERSION}" \
+        "certifi==${CERTIFI_VERSION}" \
+        "pypdf==${PYPDF_VERSION}" \
+    && rm /tmp/reconcile-lazy-deps.py
+
 # Report what actually landed, and fail the build if the pieces Kagetora cannot
 # run without are missing.
 # Run the real entry point, not just an import. The previous deploy failed with
@@ -238,8 +283,13 @@ RUN /app/hermes/.venv/bin/python -c "import importlib.metadata as m; \
 # it is a script and not a comment -- aiohttp 3.14.4's `yarl>=1.25.1` against
 # upstream's locked 1.22.0 is caught here whether or not anyone remembered to
 # write the floor down, and so is the next one.
+#
+# --lazy-deps is the THIRD check and the one v1.1.0 did not have. It fails the
+# build if any shipped version still violates a pin upstream's LAZY_DEPS table
+# declares for it, which is the exact fault that took Matrix down: checks one
+# and two both passed that build.
 COPY tests/verify-pins.py /tmp/verify-pins.py
-RUN /app/hermes/.venv/bin/python /tmp/verify-pins.py \
+RUN cd /app/hermes && /app/hermes/.venv/bin/python /tmp/verify-pins.py --lazy-deps \
         "pillow==${PILLOW_VERSION}" \
         "aiohttp==${AIOHTTP_VERSION}" \
         "yarl==${YARL_VERSION}" \
@@ -247,6 +297,23 @@ RUN /app/hermes/.venv/bin/python /tmp/verify-pins.py \
         "certifi==${CERTIFI_VERSION}" \
         "pypdf==${PYPDF_VERSION}" \
     && rm /tmp/verify-pins.py
+
+# And prove the gate is actually open, on the real adapter module rather than
+# on the table it reads. matrix_deps_present() is the registry check_fn and
+# ensure_matrix_deps() is the installer leg create_adapter() falls back to;
+# both returned False in v1.1.0, which is why there was no Matrix channel.
+# This never starts a gateway -- a second `hermes gateway run` would log in to
+# Matrix as the live agent and take over its identity.
+RUN cd /app/hermes && /app/hermes/.venv/bin/python -c "\
+from tools.lazy_deps import feature_missing, is_available; \
+import mautrix, aiohttp_socks, aiosqlite, asyncpg; \
+from plugins.platforms.matrix.adapter import matrix_deps_present, ensure_matrix_deps; \
+missing = feature_missing('platform.matrix'); \
+gates = (is_available('platform.matrix'), matrix_deps_present(), ensure_matrix_deps()); \
+print('matrix: missing', missing, '| is_available/check_fn/ensure', gates); \
+print('vision: missing', feature_missing('tool.vision')); \
+(missing or not all(gates) or feature_missing('tool.vision')) and \
+    __import__('sys').exit('matrix adapter gate is shut: %r %r' % (missing, gates))"
 
 WORKDIR /build
 
@@ -283,7 +350,7 @@ RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-lin
 FROM quay.io/hummingbird/python:3.13
 
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
-LABEL version="1.1.0"
+LABEL version="1.1.1"
 LABEL description="Hermes Agent autonomous AI agent — crunchtools deployment under the Autonomous Agent constitution profile (Signal messaging, weekly orchestration of crunchtools GHA cascade, ops watchers)."
 LABEL org.opencontainers.image.source="https://github.com/crunchtools/hermes"
 LABEL org.opencontainers.image.title="hermes"

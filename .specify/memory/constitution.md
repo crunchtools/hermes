@@ -1,6 +1,6 @@
 # hermes Constitution
 
-> **Version:** 2.0.0
+> **Version:** 2.1.0
 > **Ratified:** 2026-10-02
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -81,7 +81,14 @@ Every model call still goes to Trentina, which holds the provider key.
     `.trivyignore` entry was not the answer, and what reachability was
     actually measured;
   - it is to be **dropped, not bumped**, the moment upstream's `uv.lock`
-    reaches the same floor. A divergence that outlives its finding is a bug.
+    reaches the same floor. A divergence that outlives its finding is a bug;
+  - it MUST leave upstream's own **runtime** dependency gates satisfied. A
+    version is not only packaging metadata here: `tools/lazy_deps.py` declares
+    exact pins and `is_available(feature)` compares installed versions against
+    them, and a platform's registry `check_fn` is that call, so a pin the table
+    does not expect takes the platform offline while every import still works.
+    A divergence that moves such a pin MUST reconcile the table in the same
+    change and MUST prove the affected gate open in the build.
 
   An upgrade is always preferred to an ignore entry. `.trivyignore` is for
   findings no pin can reach.
@@ -147,4 +154,5 @@ anomaly checks) are not yet recorded in this repo.
 |---------|------|---------|
 | 1.0.0 | 2026-10-02 | First constitution, written as a v1.18.0 manifest from the README, Containerfile, build workflow and `.trivyignore` |
 | 1.1.0 | 2026-10-17 | `anthropic` extra admitted as the wire client for Trentina's `/llm/anthropic`; every model call still goes through the gateway |
+| 2.1.0 | 2026-11-08 | Fifth condition on a security divergence: it must leave upstream's runtime dependency gates satisfied, reconcile `tools/lazy_deps.py` in the same change, and prove the affected gate open in the build. Prompted by v1.1.0, which shipped aiohttp 3.14.4 over upstream's declared `aiohttp==3.14.3` and took Kagetora's Matrix channel down with every package present and importable |
 | 2.0.0 | 2026-11-08 | Breaking: "upstream's `uv.lock` decides every dependency, no overrides" becomes a bounded rule rather than an absolute one. A security divergence is permitted under four conditions and must be dropped when upstream catches up; an upgrade is preferred to a `.trivyignore` entry. Ruled by Scott after the blocking Trivy gate failed on every build from 2026-10-21 over 35 HIGH/CRITICAL findings in upstream's closure, leaving `:latest` three weeks stale (crunchtools/hermes#40). Also records `:latest` as the newest stable release per inherited constitution 1.33.0 |
