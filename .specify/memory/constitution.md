@@ -3,7 +3,7 @@
 > **Version:** 2.1.0
 > **Ratified:** 2026-10-02
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.39.1
 > **Profile:** Autonomous Agent
 
 Hermes Agent (Nous Research) packaged as a container for the crunchtools
@@ -40,19 +40,16 @@ Every model call still goes to Trentina, which holds the provider key.
 
 ## Layer 3 — Container & Supply Chain Security
 
-- **Image:** `quay.io/crunchtools/hermes` and `ghcr.io/crunchtools/hermes`.
-- **Tags:** one floating tag per run, computed in the version step.
-  `:latest` is the newest stable **release** and moves only on a `vX.Y.Z` tag
-  (inherited constitution 1.33.0); the default branch moves `:main`, a pull
-  request moves `:pr-N`, a prerelease tag moves only itself. `latest`, `main`
-  and `pr-*` are reserved: a branch build may not claim one. Every run also
-  pushes a commit-derived `git describe` tag; it is distinct per commit but
-  not registry-immutable, so anything that needs immutability pins the
-  digest. This is not a cascade image, so
-  the 1.34.0 exception does not apply. The build workflow carries **no
-  `paths:` filter** — the filter decided whether a commit on the default
-  branch was built at all, and five doc-only merges in a row left the head of
-  `main` with no image behind it.
+- **Image:** `quay.io/crunchtools/hermes` (Quay.io is the only registry).
+- **Tags:** built once per change by the inherited `container-release.yml`
+  (constitution 1.39.1): a pull request builds and gates its head, the merge
+  promotes that gated digest to `:main` with no rebuild, and a `vX.Y.Z` tag
+  copies it to the version tags and `:latest`. `:latest` is the newest stable
+  **release**. Nothing else in this repository publishes an image. The
+  workflow carries **no `paths:` filter**: the filter once decided whether a
+  commit on the default branch was built at all, and five doc-only merges in a
+  row left the head of `main` with no image behind it. The boot gate is
+  `tests/boot-gate.sh`, run against the pushed digest.
 - **Upstream build, then a named security divergence:** Hermes is cloned at
   the `HERMES_REF` git tag and installed the way upstream's own Dockerfile
   does it (`uv sync --frozen --no-install-project`, then an editable

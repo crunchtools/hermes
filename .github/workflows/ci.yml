@@ -1,5 +1,4 @@
-# The entrypoint's own tests, the floating-tag script's, and the pin
-# verifier's.
+# The entrypoint's own tests and the pin verifier's.
 #
 # They run the wrapper against a stand-in `hermes` on PATH (tests/stub-hermes),
 # so no gateway is ever started here: a second `hermes gateway run` logs in to
@@ -7,8 +6,7 @@
 # workflow may change that.
 #
 # These scripts are here because each decides something that fails quietly
-# rather than loudly: scripts/floating-tag.sh picks which image a
-# podman-auto-update host pulls; tests/verify-pins.py is the only thing that
+# rather than loudly: tests/verify-pins.py is the only thing that
 # notices a pin that did not land under `uv pip install --no-deps`, or a
 # shipped version that upstream's own LAZY_DEPS table does not expect; and
 # scripts/reconcile-lazy-deps.py edits a cloned third-party file at build
@@ -45,9 +43,6 @@ jobs:
 
       - name: Entrypoint tests
         run: bash tests/test-entrypoint.sh
-
-      - name: Floating tag tests
-        run: bash tests/test-floating-tag.sh
 
   pins:
     name: Pin verifier tests
