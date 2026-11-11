@@ -14,7 +14,7 @@ periodic environment reports). Messaging via Signal.
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | Containerfile + GHA build (Buildah → Trivy → SBOM → Quay + GHCR) | this repo |
+| 1 | Containerfile + GHA build (build once → boot gate → Trivy → Quay) | this repo |
 | 2 | Trust boundary (P-Agent/Q-Agent), circuit breakers, audit logging | next |
 | 3 | Configured ops timers (GHA pulse, backups, Quay, Nagios, reports) | next |
 | 4 | Per-repo constitution at `.specify/memory/constitution.md`, cosign signing, production gates | next |
@@ -27,14 +27,13 @@ podman build -t quay.io/crunchtools/hermes .
 
 ## Tags
 
-Per constitution 1.33.0, `:latest` is the newest stable **release** — it moves
-only on a `vX.Y.Z` tag push. A merge to the default branch moves `:main`, a
-pull request moves `:pr-N`, and a prerelease tag moves only itself. Every run
-also pushes a commit-derived `git describe` tag — distinct per commit, but
-nothing in the registry stops a re-run of the same commit from overwriting it,
-so pin a digest where that matters. A systemd unit that means "the
-newest thing that was deliberately shipped" wants `:latest`; one that means
-"the head of main" has to say `:main`.
+Per constitution 1.39.1 an image is built once per change and the tested digest
+is what ships. A pull request builds and gates its head; the merge promotes
+that digest to `:main` with no rebuild; a `vX.Y.Z` tag copies it to the version
+tags and `:latest`. So `:latest` is the newest stable **release** and moves
+only on a tag. A systemd unit that means "the newest thing that was
+deliberately shipped" wants `:latest`; one that means "the head of main" has to
+say `:main`. Quay.io is the only registry.
 
 ## Run (mirrors the openclaw layout)
 
