@@ -350,7 +350,7 @@ RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-lin
 FROM quay.io/hummingbird/python:3.13
 
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
-LABEL version="1.1.1"
+LABEL version="1.1.2"
 LABEL description="Hermes Agent autonomous AI agent — crunchtools deployment under the Autonomous Agent constitution profile (Signal messaging, weekly orchestration of crunchtools GHA cascade, ops watchers)."
 LABEL org.opencontainers.image.source="https://github.com/crunchtools/hermes"
 LABEL org.opencontainers.image.title="hermes"
