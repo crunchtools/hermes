@@ -1,3 +1,8 @@
+# No scanner reads this file any more: the per-build Trivy gate was retired
+# (constitution 1.40.0) and the fleet CVE check scans published images on a
+# schedule (RT #1551). It is kept as the written record of accepted findings,
+# which the Containerfile cites.
+#
 # This file is for findings nothing in this repo can fix. It is NOT the place
 # to quiet a finding that an upgrade would clear: as of 2026-11-08 the
 # Containerfile pins pillow, aiohttp, yarl, PyJWT and certifi above upstream's

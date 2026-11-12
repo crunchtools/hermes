@@ -14,7 +14,7 @@ periodic environment reports). Messaging via Signal.
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | Containerfile + GHA build (build once → boot gate → Trivy → Quay) | this repo |
+| 1 | Containerfile + GHA build (build once → boot gate → Quay) | this repo |
 | 2 | Trust boundary (P-Agent/Q-Agent), circuit breakers, audit logging | next |
 | 3 | Configured ops timers (GHA pulse, backups, Quay, Nagios, reports) | next |
 | 4 | Per-repo constitution at `.specify/memory/constitution.md`, cosign signing, production gates | next |

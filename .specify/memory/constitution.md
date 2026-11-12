@@ -1,6 +1,6 @@
 # hermes Constitution
 
-> **Version:** 2.1.0
+> **Version:** 2.2.0
 > **Ratified:** 2026-10-02
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.39.1
@@ -107,10 +107,13 @@ Every model call still goes to Trentina, which holds the provider key.
   interpreter is chosen per command, not with `UV_PYTHON`. The build runs
   `hermes --version` in the runtime stage, because builder-stage checks
   passed twice while the shipped image was broken.
-- **Trivy:** blocking (exit code 1) with `.trivyignore`. This deviates from
-  the fleet's advisory Trivy step on purpose: turning a security gate advisory
-  is not a CI-cleanup side effect. Each ignore entry records why the finding
-  is unreachable or blocked upstream, and when to revisit it. SBOM (SPDX)
+- **Vulnerability scanning:** none at build time; published images are scanned on a schedule by the fleet CVE check (grype + Nagios), which pages on a new fixable Critical (constitution 1.40.0, RT #1551). The blocking
+  Trivy gate this repo kept on purpose is retired with the fleet's; the fleet
+  scan covers this image and pages on a new fixable Critical, which is the
+  security property the gate existed for. `.trivyignore` stays as the written
+  record of accepted findings that the Containerfile cites: each entry says
+  why the finding is unreachable or blocked upstream, and when to revisit it.
+  No scanner reads it. SBOM (SPDX)
   generated per build; cosign signing is deferred to Phase 4.
 - **No `schedule:` trigger:** the image rebuilds on `parent-image-updated`,
   which Hermes fires at itself as part of its weekly pulse to every root.
@@ -153,3 +156,4 @@ anomaly checks) are not yet recorded in this repo.
 | 1.1.0 | 2026-10-17 | `anthropic` extra admitted as the wire client for Trentina's `/llm/anthropic`; every model call still goes through the gateway |
 | 2.1.0 | 2026-11-08 | Fifth condition on a security divergence: it must leave upstream's runtime dependency gates satisfied, reconcile `tools/lazy_deps.py` in the same change, and prove the affected gate open in the build. Prompted by v1.1.0, which shipped aiohttp 3.14.4 over upstream's declared `aiohttp==3.14.3` and took Kagetora's Matrix channel down with every package present and importable |
 | 2.0.0 | 2026-11-08 | Breaking: "upstream's `uv.lock` decides every dependency, no overrides" becomes a bounded rule rather than an absolute one. A security divergence is permitted under four conditions and must be dropped when upstream catches up; an upgrade is preferred to a `.trivyignore` entry. Ruled by Scott after the blocking Trivy gate failed on every build from 2026-10-21 over 35 HIGH/CRITICAL findings in upstream's closure, leaving `:latest` three weeks stale (crunchtools/hermes#40). Also records `:latest` as the newest stable release per inherited constitution 1.33.0 |
+| 2.2.0 | 2026-11-11 | The blocking per-build Trivy gate is retired with the fleet's (constitution 1.40.0): published images are scanned on a schedule by the fleet CVE check (RT #1551). `.trivyignore` is kept as the accepted-findings record |
