@@ -3,7 +3,7 @@
 > **Version:** 2.2.0
 > **Ratified:** 2026-10-02
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.39.1
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.40.0
 > **Profile:** Autonomous Agent
 
 Hermes Agent (Nous Research) packaged as a container for the crunchtools
