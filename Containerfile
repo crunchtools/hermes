@@ -330,7 +330,9 @@ RUN curl -sL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CL
 # Node.js 22 LTS — Hermes's install.sh bootstrap checks for this on every start
 # and tries to install it at runtime if missing (fails on read-only rootfs).
 # Pre-installing avoids the retry loop and the 10-30s bootstrap delay per restart.
-ARG NODE_VERSION=22.16.0
+# 22.23.4 is the oldest 22.x the container-scan gate passes: 22.16.0 carried two
+# fixable Criticals, CVE-2026-111497 (on CISA's KEV list) and CVE-2025-55130.
+ARG NODE_VERSION=22.23.4
 RUN curl -sL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
         -o /tmp/node.tar.gz && \
     mkdir -p /build/node && \

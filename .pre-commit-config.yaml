@@ -1,7 +1,6 @@
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
-  # tests/*.py only -- see ruff.toml. The hook comes from ruff's own repo so
-  # the linter runs from a pre-commit-managed environment rather than a host
-  # install (constitution XII).
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.1
     hooks:
@@ -10,20 +9,19 @@ repos:
         stages: [pre-commit, pre-merge-commit]
       - id: ruff-format
         stages: [pre-commit, pre-merge-commit]
-
   - repo: local
     hooks:
-      - id: gourmand
-        name: Gourmand (AI slop detection)
-        entry: podman --events-backend=none run --rm --log-driver=none -v .:/src:Z -w /src quay.io/crunchtools/gourmand:latest check --full
+      - id: sdlc-commit
+        name: sdlc commit
+        entry: .sdlc/bin/sdlc commit
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-commit, pre-merge-commit]
-      - id: gatehouse
-        name: Gatehouse (AI code review, staged diff)
-        entry: bash -c 'git diff --cached | podman --events-backend=none run --rm --log-driver=none -i --env-file "$HOME/.config/mcp-env/gatehouse.env" -v .:/src:ro,Z -w /src quay.io/crunchtools/gatehouse:latest --stdin'
+      - id: sdlc-push
+        name: sdlc push
+        entry: .sdlc/bin/sdlc push
         language: system
         pass_filenames: false
         always_run: true
-        stages: [pre-commit, pre-merge-commit]
+        stages: [pre-push]

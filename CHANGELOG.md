@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Node.js 22.16.0 -> 22.23.4, clearing two fixable Criticals
+  (CVE-2026-111497, on CISA's KEV list, and CVE-2025-55130) that python-sdlc's
+  container-scan gate found once this repo moved onto the floating `sdlc ci`.
+- `.grype.yaml` for that gate: it scans the image as a directory, so it
+  ignores the manifests that describe nothing installed (upstream's
+  `uv.lock`, npm lockfiles, upstream's workflows) and carries over the anyio
+  finding `.trivyignore` already accepts.
+
 ## [1.1.2] - 2026-11-11
 
 ### Changed
