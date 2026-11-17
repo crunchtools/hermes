@@ -1,0 +1,35 @@
+# What python-sdlc's container-scan gate (`sdlc ci`) does not judge in this
+# image. The gate runs `grype dir:` over the built image's filesystem, so it
+# reads every manifest left on disk as well as what is actually installed.
+#
+# Only two kinds of entry belong here: manifests that describe nothing
+# installed, and findings already accepted in .trivyignore (which records why;
+# no scanner reads that file any more). A finding with a fixed version is
+# fixed in the Containerfile, never ignored here.
+ignore:
+  # Upstream's lockfile. The venv it built is scanned directly through its
+  # dist-info, and that is where the Containerfile's pins above uv.lock
+  # (pillow, aiohttp, yarl, PyJWT, certifi) are visible; the lockfile still
+  # names upstream's older versions and would report them as installed.
+  - package:
+      location: "/app/hermes/uv.lock"
+  # npm lockfiles in hermes-agent's source tree. No node_modules is installed
+  # in the image; these describe dependencies of the website and of optional
+  # bridges and sidecars that are never built here.
+  - package:
+      location: "/app/hermes/**/package-lock.json"
+  - package:
+      location: "/app/hermes/package-lock.json"
+  # A skill's setup script's declared requirements, not an installed package.
+  - package:
+      location: "/app/hermes/skills/**/setup.py"
+  # Upstream's own CI workflows, copied with the source tree; nothing runs them.
+  - package:
+      location: "/app/hermes/.github/**"
+
+  # Accepted in .trivyignore (CVE-2026-63374): anyio 4.12.1 is pinned by the
+  # `mcp` package's own metadata, upstream of hermes-agent's uv.lock.
+  - vulnerability: GHSA-82r6-8w77-94w6
+    package:
+      name: anyio
+      version: 4.12.1
