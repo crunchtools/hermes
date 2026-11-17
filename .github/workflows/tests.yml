@@ -20,7 +20,7 @@
 # No `paths:` filter: the tests are cheap and a change anywhere that breaks
 # them should fail the pull request.
 
-name: CI
+name: Tests
 
 on:
   pull_request:
