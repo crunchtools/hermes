@@ -56,17 +56,9 @@ jobs:
 
   pins:
     name: Pin verifier tests
-    # Same-repo PRs run on our cached runner, pushes and schedules on the uncached
-    # one; forks and Dependabot stay on GitHub's. An empty variable falls back to
-    # ubuntu-latest (crunchtools/trentina security.yml).
-    runs-on: >-
-      ${{ github.event_name == 'pull_request'
-          && github.event.pull_request.head.repo.full_name == github.repository
-          && github.event.pull_request.user.login != 'dependabot[bot]'
-          && (vars.CACHED_RUNNER_LABEL || 'ubuntu-latest')
-          || github.event_name != 'pull_request'
-          && (vars.UNCACHED_RUNNER_LABEL || 'ubuntu-latest')
-          || 'ubuntu-latest' }}
+    # Stays on GitHub's machines: the self-hosted runner's python3 has no pip,
+    # and this job pip-installs `packaging` (a275).
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
