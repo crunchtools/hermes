@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Gatehouse triage is passed `review_result: ${{ needs.review.result }}`, so a PR
+  whose review job died before posting is held (gatehouse v0.32.0).
+
 ### Security
 
 - Node.js 22.16.0 -> 22.23.4, clearing two fixable Criticals
