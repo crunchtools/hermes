@@ -16,6 +16,15 @@ All notable changes to this project are documented here. The format follows
   `uv.lock`, npm lockfiles, upstream's workflows) and carries over the anyio
   finding `.trivyignore` already accepts.
 
+### Changed
+
+- The container release runs constitution v1.51.0's `container-release.yml`
+  (was v1.46.0) and grants it `issues: write`, so a failed scheduled rebuild
+  opens an issue instead of only warning. A `v*` promote now also refuses an
+  image whose `version` label names a different release of this repo, so the
+  release PR must move the Containerfile's `LABEL version` before its merge is
+  tagged; it reads 1.1.2, the current release, so nothing changes today.
+
 ## [1.1.2] - 2026-11-11
 
 ### Changed
