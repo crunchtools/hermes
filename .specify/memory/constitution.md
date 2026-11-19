@@ -1,6 +1,6 @@
 # hermes Constitution
 
-> **Version:** 2.2.0
+> **Version:** 2.3.0
 > **Ratified:** 2026-10-02
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.46.0
@@ -114,7 +114,8 @@ Every model call still goes to Trentina, which holds the provider key.
   record of accepted findings that the Containerfile cites: each entry says
   why the finding is unreachable or blocked upstream, and when to revisit it.
   No scanner reads it. SBOM (SPDX)
-  generated per build; cosign signing is deferred to Phase 4.
+  generated per build. Promote signs the gated digest with the fleet cosign
+  key (`sign: true`, rhel10-bootc-server#47) before any tag moves.
 - **No `schedule:` trigger:** the image rebuilds on `parent-image-updated`,
   which Hermes fires at itself as part of its weekly pulse to every root.
 - **Runtime:** rootless (UID 65532), `--read-only` root filesystem with
@@ -157,3 +158,4 @@ anomaly checks) are not yet recorded in this repo.
 | 2.1.0 | 2026-11-08 | Fifth condition on a security divergence: it must leave upstream's runtime dependency gates satisfied, reconcile `tools/lazy_deps.py` in the same change, and prove the affected gate open in the build. Prompted by v1.1.0, which shipped aiohttp 3.14.4 over upstream's declared `aiohttp==3.14.3` and took Kagetora's Matrix channel down with every package present and importable |
 | 2.0.0 | 2026-11-08 | Breaking: "upstream's `uv.lock` decides every dependency, no overrides" becomes a bounded rule rather than an absolute one. A security divergence is permitted under four conditions and must be dropped when upstream catches up; an upgrade is preferred to a `.trivyignore` entry. Ruled by Scott after the blocking Trivy gate failed on every build from 2026-10-21 over 35 HIGH/CRITICAL findings in upstream's closure, leaving `:latest` three weeks stale (crunchtools/hermes#40). Also records `:latest` as the newest stable release per inherited constitution 1.33.0 |
 | 2.2.0 | 2026-11-11 | The blocking per-build Trivy gate is retired with the fleet's (constitution 1.40.0): published images are scanned on a schedule by the fleet CVE check (RT #1551). `.trivyignore` is kept as the accepted-findings record |
+| 2.3.0 | 2026-11-19 | Cosign signing is no longer deferred to Phase 4: promote signs the image with the fleet key, because bootc hosts are moving to trust only signed `quay.io/crunchtools` images (rhel10-bootc-server#47) |
