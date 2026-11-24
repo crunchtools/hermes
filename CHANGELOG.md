@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-24
+
 ### Changed
 
 - Gatehouse triage is passed `review_result: ${{ needs.review.result }}`, so a PR
