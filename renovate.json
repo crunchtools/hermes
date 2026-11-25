@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "packageRules": [
+    {
+      "description": [
+        "hermes-agent requires Python <3.14 (its requires-python); the 3.14 base",
+        "broke the build on 2026-10-02. The org preset already holds every",
+        "hummingbird/python minor, but for a fleet reason that may lift; this is",
+        "hermes's own cap. Remove it when upstream supports 3.14."
+      ],
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["**/hummingbird/python"],
+      "allowedVersions": "<3.14"
+    }
+  ]
+}
