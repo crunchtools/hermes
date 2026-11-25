@@ -42,5 +42,4 @@ tag = "localhost/hermes:test"
 kind = "command"
 image = "localhost/hermes:test"
 argv = ["bash", "tests/image/boot-check.sh"]
-env = { HOME = "/app" }
 network = true
