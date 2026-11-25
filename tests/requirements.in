@@ -1,0 +1,4 @@
+# The test-only dependency of tests/test-verify-pins.py and
+# tests/test-reconcile-lazy-deps.py. Compile tests/requirements.txt from it:
+#   uv pip compile --generate-hashes --universal tests/requirements.in -o tests/requirements.txt
+packaging==25.0

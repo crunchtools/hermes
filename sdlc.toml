@@ -17,18 +17,19 @@ kind = "command"
 argv = ["bash", "tests/test-entrypoint.sh"]
 
 # The pin verifier and lazy-deps reconciler tests; `packaging` is their only
-# dependency, so they run on a uv image that adds it.
+# dependency, installed on a uv image from tests/requirements.txt with every
+# hash checked (tests/run-locked.sh).
 [tool.sdlc.ci.pin-tests]
 kind = "command"
 image = "ghcr.io/astral-sh/uv@sha256:e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099"  # 0.13.7-python3.14-trixie-slim
-argv = ["uv", "run", "--no-project", "--with", "packaging==25.0", "python", "tests/test-verify-pins.py"]
+argv = ["sh", "tests/run-locked.sh", "tests/test-verify-pins.py"]
 env = { UV_CACHE_DIR = "/tmp/uv", UV_PYTHON_DOWNLOADS = "never" }
 network = true
 
 [tool.sdlc.ci.reconcile-tests]
 kind = "command"
 image = "ghcr.io/astral-sh/uv@sha256:e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099"  # 0.13.7-python3.14-trixie-slim
-argv = ["uv", "run", "--no-project", "--with", "packaging==25.0", "python", "tests/test-reconcile-lazy-deps.py"]
+argv = ["sh", "tests/run-locked.sh", "tests/test-reconcile-lazy-deps.py"]
 env = { UV_CACHE_DIR = "/tmp/uv", UV_PYTHON_DOWNLOADS = "never" }
 network = true
 

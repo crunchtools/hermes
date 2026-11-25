@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The pin-tests and reconcile-tests checks install `packaging` from a committed,
+  hash-locked `tests/requirements.txt` (compiled from `tests/requirements.in`)
+  through `tests/run-locked.sh`, which uses `uv pip install --require-hashes`,
+  instead of `uv run --with packaging==25.0`, which pinned the version but
+  checked no hash (constitution S1, #68).
 - Renovate keeps the Hummingbird Python base below 3.14 (`renovate.json`),
   the cap Dependabot's ignore rule held: hermes-agent requires Python <3.14.
   Comments that said Dependabot watches the base images now say Renovate, and
