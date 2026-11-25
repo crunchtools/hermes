@@ -130,11 +130,8 @@ and takes over its identity.
 - No `HEALTHCHECK`: the container exposes no port on the hosts that run it, so
   readiness is the log line above rather than a probe
 
-## Why no `schedule:` trigger
+## How the image stays fresh
 
-Per the org-wide cleanup completed 2026-06-10 (see
-[crunchtools/constitution#4 / `validate-cascade.py`](https://github.com/crunchtools/constitution)),
-no workflow in the crunchtools org has a `schedule:` trigger. Weekly rebuilds
-are pulsed by Hermes itself via `workflow_dispatch` and `repository_dispatch`.
-Hermes's own image self-refreshes because Hermes pulses every root in its
-weekly list, including its own.
+`ci.yml` is the fleet's one file and carries its schedules: a weekly run
+audits and rebuilds the image, and a 6-hourly run polls the Hummingbird parent
+image and rebuilds when its digest has moved. Nothing has to dispatch it.

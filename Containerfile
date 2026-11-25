@@ -95,9 +95,9 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir --no-deps \
 # not a version override of upstream's resolution and the "uv.lock decides
 # everything" rule above does not cover it.
 #
-# Nothing watches this automatically: dependabot.yml tracks the docker and
-# github-actions ecosystems only, there being no language manifest here. Bump
-# it by hand when Trivy reports the next one.
+# Nothing watches this automatically: Renovate reads only the FROM lines here,
+# there being no language manifest, and never a pin in a RUN step. Bump it by
+# hand when Trivy reports the next one.
 #
 # --exclude-newer-package IS THE POINT OF THIS LINE, so read before removing
 # it. This install resolves inside /app/hermes, so it inherits upstream's
@@ -203,9 +203,8 @@ RUN /opt/uvenv/bin/uv pip install --no-cache-dir \
 # works. That is what v1.1.0 did to Matrix. The reconciliation step below and
 # `verify-pins.py --lazy-deps` exist for it; a new pin must pass both.
 #
-# Nothing watches these. dependabot.yml covers the docker and github-actions
-# ecosystems only, there being no language manifest in this repo, so the next
-# finding arrives as a red gate. Each pin is to be DROPPED, not bumped, the
+# Nothing watches these. Renovate reads only the FROM lines, there being no
+# language manifest in this repo, so the next finding arrives as a red gate. Each pin is to be DROPPED, not bumped, the
 # moment upstream's uv.lock reaches the same floor; until then a bump is a
 # hand review against the Trivy report.
 #
