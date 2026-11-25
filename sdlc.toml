@@ -1,2 +1,45 @@
 [tool.sdlc]
 repo-kinds = ["autonomous-agent"]
+
+[tool.sdlc.image]
+# Written by crunchtools/sdlc's scripts/convert_repo.py: moved from the workflows.
+image = "quay.io/crunchtools/hermes"
+boot = "none"
+boot-none-reason = "the boot gate is the ci check boot, which runs the built image's entrypoint until it reports ready (crunchtools/sdlc#118)"
+
+[tool.sdlc.ci]
+checks = ["entrypoint-tests", "pin-tests", "reconcile-tests", "hermes-image", "boot"]
+
+# Was tests.yml. The entrypoint's tests run against a stand-in `hermes`
+# (tests/stub-hermes), so no gateway is ever started here.
+[tool.sdlc.ci.entrypoint-tests]
+kind = "command"
+argv = ["bash", "tests/test-entrypoint.sh"]
+
+# The pin verifier and lazy-deps reconciler tests; `packaging` is their only
+# dependency, so they run on a uv image that adds it.
+[tool.sdlc.ci.pin-tests]
+kind = "command"
+image = "ghcr.io/astral-sh/uv@sha256:e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099"  # 0.13.7-python3.14-trixie-slim
+argv = ["uv", "run", "--no-project", "--with", "packaging==25.0", "python", "tests/test-verify-pins.py"]
+env = { UV_CACHE_DIR = "/tmp/uv", UV_PYTHON_DOWNLOADS = "never" }
+network = true
+
+[tool.sdlc.ci.reconcile-tests]
+kind = "command"
+image = "ghcr.io/astral-sh/uv@sha256:e80c05a310400cfc90af00b5b7271ef9ad24816e3265e1162af8a678e1aad099"  # 0.13.7-python3.14-trixie-slim
+argv = ["uv", "run", "--no-project", "--with", "packaging==25.0", "python", "tests/test-reconcile-lazy-deps.py"]
+env = { UV_CACHE_DIR = "/tmp/uv", UV_PYTHON_DOWNLOADS = "never" }
+network = true
+
+# Was container.yml's boot-command (tests/boot-gate.sh): the image this change
+# builds runs its own entrypoint until it says ready. No credentials are given.
+[tool.sdlc.ci.hermes-image]
+kind = "image-build"
+tag = "localhost/hermes:test"
+
+[tool.sdlc.ci.boot]
+kind = "command"
+image = "localhost/hermes:test"
+argv = ["bash", "tests/image/boot-check.sh"]
+network = true

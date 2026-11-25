@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Renovate keeps the Hummingbird Python base below 3.14 (`renovate.json`),
+  the cap Dependabot's ignore rule held: hermes-agent requires Python <3.14.
+  Comments that said Dependabot watches the base images now say Renovate, and
+  the README describes `ci.yml`'s schedules instead of dispatch pulses.
+
 ### Changed
 
 - Gatehouse triage is passed `review_result: ${{ needs.review.result }}`, so a PR
